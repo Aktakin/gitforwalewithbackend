@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1976d2" />
+    <meta
+      name="description"
+      content="SkillBridge - Connect with skilled professionals for any service you need"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Meta tags for social sharing -->
+    <meta property="og:title" content="SkillBridge - Skills Marketplace" />
+    <meta property="og:description" content="Connect with skilled professionals for any service you need" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://skillbridge.app" />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
+    
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SkillBridge - Skills Marketplace" />
+    <meta name="twitter:description" content="Connect with skilled professionals for any service you need" />
+    <meta name="twitter:image" content="%PUBLIC_URL%/og-image.png" />
+    
+    <title>SkillBridge - Skills Marketplace</title>
+    
+    <style>
+      /* Loading styles */
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .loading-text {
+        color: white;
+        font-family: 'Inter', sans-serif;
+        font-size: 18px;
+        font-weight: 500;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    
+    <!-- Loading screen -->
+    <div id="loading" class="loading-container">
+      <div style="text-align: center;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading SkillBridge...</div>
+      </div>
+    </div>
+    
+    <div id="root"></div>
+    
+    <script>
+      // Hide loading screen when React app is ready
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          const loading = document.getElementById('loading');
+          if (loading) {
+            loading.style.opacity = '0';
+            setTimeout(function() {
+              loading.style.display = 'none';
+            }, 300);
+          }
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>
+
+
+
