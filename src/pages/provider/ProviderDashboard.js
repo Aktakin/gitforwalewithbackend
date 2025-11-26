@@ -304,9 +304,9 @@ const ProviderDashboard = () => {
 
         // Calculate ratings and growth for each skill
         skillsMap.forEach(skill => {
-          // Rating based on completion rate
+          // Rating based on completion rate (keep as number)
           skill.rating = skill.orders > 0 
-            ? ((skill.completedOrders / skill.orders) * 5).toFixed(1)
+            ? parseFloat(((skill.completedOrders / skill.orders) * 5).toFixed(1))
             : 0;
           
           // Growth based on earnings comparison
