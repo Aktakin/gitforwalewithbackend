@@ -49,6 +49,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { db } from '../../lib/supabase';
 import { transformProposal, transformUser, formatTimeAgo } from '../../utils/dataTransform';
+import PaymentModal from '../../components/payment/PaymentModal';
 
 const ViewProposalsPage = () => {
   const navigate = useNavigate();
@@ -62,6 +63,8 @@ const ViewProposalsPage = () => {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [proposalForPayment, setProposalForPayment] = useState(null);
 
   const requestId = searchParams.get('request');
   const proposalId = searchParams.get('proposal');
@@ -226,10 +229,17 @@ const ViewProposalsPage = () => {
 
       console.log(`Successfully ${actionType}ed proposal:`, selectedProposal.id);
       setActionDialogOpen(false);
-      setSelectedProposal(null);
       
-      // Show success message
-      alert(`Proposal ${actionType}ed successfully! The artisan has been notified.`);
+      // If accepting proposal, open payment modal immediately
+      if (actionType === 'accept') {
+        setProposalForPayment(selectedProposal);
+        setPaymentModalOpen(true);
+      } else {
+        // For decline, just show success message
+        alert(`Proposal declined. The artisan has been notified.`);
+      }
+      
+      setSelectedProposal(null);
     } catch (error) {
       console.error('Error updating proposal:', error);
       alert(`Failed to ${actionType} proposal: ${error.message}`);
@@ -564,6 +574,31 @@ const ViewProposalsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Payment Modal */}
+      {proposalForPayment && (
+        <PaymentModal
+          open={paymentModalOpen}
+          onClose={() => {
+            setPaymentModalOpen(false);
+            setProposalForPayment(null);
+          }}
+          amount={proposalForPayment.proposal.price}
+          proposalId={proposalForPayment.id}
+          requestId={proposalForPayment.requestId}
+          description={`Payment for "${proposalForPayment.request?.title || 'Service'}" - ${proposalForPayment.artisan.name}`}
+          onSuccess={(result) => {
+            console.log('Payment successful:', result);
+            alert(`Payment successful! $${proposalForPayment.proposal.price} has been placed in escrow. The artisan can now start working on your request.`);
+            setPaymentModalOpen(false);
+            setProposalForPayment(null);
+          }}
+          onError={(error) => {
+            console.error('Payment failed:', error);
+            alert(`Payment failed: ${error.message}. You can try again from your dashboard.`);
+          }}
+        />
+      )}
     </Container>
   );
 };

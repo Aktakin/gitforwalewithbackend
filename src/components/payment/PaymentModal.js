@@ -22,6 +22,7 @@ import {
   CheckCircle,
 } from '@mui/icons-material';
 import paymentService from '../../lib/paymentService';
+import { useAuth } from '../../contexts/SupabaseAuthContext';
 
 /**
  * Payment Modal Component
@@ -39,6 +40,7 @@ const PaymentModal = ({
   onSuccess,
   onError,
 }) => {
+  const { user } = useAuth();
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentId, setPaymentId] = useState(null);
@@ -52,6 +54,12 @@ const PaymentModal = ({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!user?.id) {
+      setError('Please log in to complete payment');
+      return;
+    }
+
     setProcessing(true);
     setError(null);
 
@@ -63,7 +71,7 @@ const PaymentModal = ({
       if (!paymentId && proposalId) {
         const result = await paymentService.createProposalPayment(
           proposalId,
-          'current-user-id' // Replace with actual user ID from auth
+          user.id
         );
         payment = result.payment;
         paymentFees = result.fees;
@@ -73,7 +81,7 @@ const PaymentModal = ({
 
       // Step 2: Add payment method (mock)
       const paymentMethodResult = await paymentService.addPaymentMethod({
-        userId: 'current-user-id', // Replace with actual user ID
+        userId: user.id,
         cardDetails: {
           number: cardNumber,
           exp_month: parseInt(expMonth),
