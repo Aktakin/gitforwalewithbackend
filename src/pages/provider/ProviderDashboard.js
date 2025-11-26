@@ -174,17 +174,62 @@ const ProviderDashboard = () => {
           ? ((thisMonthEarnings - lastMonthEarnings) / lastMonthEarnings * 100).toFixed(1)
           : thisMonthEarnings > 0 ? 100 : 0;
         
-        const ordersGrowth = completedOrders.length > 0 ? 15 : 0; // Placeholder
+        // Calculate orders growth (compare this month vs last month)
+        const lastMonthOrders = completedOrders.filter(o => {
+          const date = o.createdAt ? new Date(o.createdAt) : null;
+          return date && date >= startOfLastMonth && date < startOfMonth;
+        }).length;
+        
+        const thisMonthOrders = completedOrders.filter(o => {
+          const date = o.createdAt ? new Date(o.createdAt) : null;
+          return date && date >= startOfMonth;
+        }).length;
+        
+        const ordersGrowth = lastMonthOrders > 0 
+          ? ((thisMonthOrders - lastMonthOrders) / lastMonthOrders * 100).toFixed(1)
+          : thisMonthOrders > 0 ? 100 : 0;
         
         // Calculate success rate
         const successRate = validOrders.length > 0 
           ? Math.round((completedOrders.length / validOrders.length) * 100)
           : 0;
         
-        // Calculate rating
+        // Calculate rating based on success rate and completion
         const rating = validOrders.length > 0
-          ? ((completedOrders.length / validOrders.length) * 5).toFixed(1)
+          ? ((successRate / 100) * 5).toFixed(1)
           : 0;
+        
+        // Calculate average response time from proposal creation dates
+        let averageResponseTime = 'N/A';
+        if (transformedProposals.length > 0) {
+          const responseTimes = [];
+          for (const proposal of transformedProposals) {
+            if (proposal.createdAt && proposal.request?.createdAt) {
+              const timeDiff = new Date(proposal.createdAt) - new Date(proposal.request.createdAt);
+              const hours = timeDiff / (1000 * 60 * 60);
+              if (hours > 0) responseTimes.push(hours);
+            }
+          }
+          if (responseTimes.length > 0) {
+            const avgHours = responseTimes.reduce((sum, t) => sum + t, 0) / responseTimes.length;
+            averageResponseTime = avgHours < 1 
+              ? `${Math.round(avgHours * 60)} min`
+              : `${avgHours.toFixed(1)} hrs`;
+          }
+        }
+        
+        // Get profile views from user profile or skills
+        let profileViews = 0;
+        try {
+          const userSkills = await db.skills.getUserSkills(user.id);
+          // Sum up views from all requests the user has proposals for
+          const requestsWithProposals = transformedProposals
+            .map(p => p.request)
+            .filter(r => r && r.views);
+          profileViews = requestsWithProposals.reduce((sum, r) => sum + (r.views || 0), 0);
+        } catch (err) {
+          console.warn('Could not fetch profile views:', err);
+        }
 
         setProviderStats({
           totalEarnings,
@@ -194,11 +239,11 @@ const ProviderDashboard = () => {
           completedOrders: completedOrders.length,
           pendingProposals: pendingProposals.length,
           rating: parseFloat(rating),
-          responseTime: '1.2 hrs',
+          responseTime: averageResponseTime,
           successRate,
-          profileViews: 847, // TODO: Implement real tracking
+          profileViews: profileViews || 0,
           earningsGrowth: parseFloat(earningsGrowth),
-          ordersGrowth,
+          ordersGrowth: parseFloat(ordersGrowth),
         });
 
         // Generate earnings data for the chart (last 7 months)
@@ -227,7 +272,7 @@ const ProviderDashboard = () => {
         }
         setEarningsData(earningsChart);
 
-        // Calculate skills performance
+        // Calculate skills performance based on real data
         const skillsMap = new Map();
         validOrders.forEach(order => {
           const category = order.category || 'Other';
@@ -235,16 +280,40 @@ const ProviderDashboard = () => {
             skillsMap.set(category, {
               name: category,
               orders: 0,
-              rating: 4.5 + Math.random() * 0.5,
+              completedOrders: 0,
+              rating: 0,
               earnings: 0,
-              growth: Math.floor(Math.random() * 30) - 10
+              lastMonthEarnings: 0,
+              growth: 0
             });
           }
           const skill = skillsMap.get(category);
           skill.orders += 1;
+          
           if (order.status === 'Completed') {
+            skill.completedOrders += 1;
             skill.earnings += order.amount || 0;
+            
+            // Track last month's earnings for growth calculation
+            const orderDate = order.createdAt ? new Date(order.createdAt) : null;
+            if (orderDate && orderDate >= startOfLastMonth && orderDate < startOfMonth) {
+              skill.lastMonthEarnings += order.amount || 0;
+            }
           }
+        });
+
+        // Calculate ratings and growth for each skill
+        skillsMap.forEach(skill => {
+          // Rating based on completion rate
+          skill.rating = skill.orders > 0 
+            ? ((skill.completedOrders / skill.orders) * 5).toFixed(1)
+            : 0;
+          
+          // Growth based on earnings comparison
+          const thisMonthEarnings = skill.earnings - skill.lastMonthEarnings;
+          skill.growth = skill.lastMonthEarnings > 0
+            ? Math.round(((thisMonthEarnings - skill.lastMonthEarnings) / skill.lastMonthEarnings) * 100)
+            : thisMonthEarnings > 0 ? 100 : 0;
         });
 
         const skillsArray = Array.from(skillsMap.values())

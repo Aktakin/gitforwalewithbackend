@@ -103,14 +103,37 @@ const DashboardScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, o
         .filter(r => r.urgency === 'urgent' || r.urgency === 'high')
         .slice(0, 3);
 
-      // Get user stats
+      // Get user stats including proposals, earnings, and messages
       let userProposals = 0;
+      let totalEarnings = 0;
+      let rating = 0;
+      let messageCount = 0;
+      
       if (user?.id) {
         try {
+          // Get user's proposals
           const proposals = await db.proposals.getUserProposals(user.id);
           userProposals = proposals?.length || 0;
+          
+          // Calculate earnings from accepted proposals
+          const acceptedProposals = proposals?.filter(p => p.status === 'accepted') || [];
+          totalEarnings = acceptedProposals.reduce((sum, p) => sum + (p.proposed_price || 0), 0);
+          
+          // Calculate rating based on acceptance rate
+          if (userProposals > 0) {
+            const acceptanceRate = acceptedProposals.length / userProposals;
+            rating = (acceptanceRate * 5).toFixed(1);
+          }
+          
+          // Get message count from conversations
+          try {
+            const conversations = await db.conversations.getUserConversations(user.id);
+            messageCount = conversations?.length || 0;
+          } catch (err) {
+            console.warn('Could not fetch conversations:', err);
+          }
         } catch (error) {
-          console.error('Error fetching user proposals:', error);
+          console.error('Error fetching user stats:', error);
         }
       }
 
@@ -118,9 +141,9 @@ const DashboardScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, o
         stats: {
           activeProjects: userRequests.filter(r => r.status === 'open' || r.status === 'in_progress').length,
           completedProjects: userRequests.filter(r => r.status === 'accepted' || r.status === 'completed').length,
-          totalEarnings: 0, // TODO: Calculate from completed projects
-          rating: 0, // TODO: Calculate from reviews
-          messages: 0, // TODO: Get from conversations
+          totalEarnings: totalEarnings,
+          rating: parseFloat(rating),
+          messages: messageCount,
           proposals: userProposals,
         },
         trendingRequests: sortedRequests.slice(0, 8),
