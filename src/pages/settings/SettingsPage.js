@@ -553,20 +553,21 @@ const SettingsPage = () => {
               <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Lock /> Password
               </Typography>
-              {!showPasswordFields ? (
-                <Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Password was last changed 3 months ago
-                  </Typography>
-                  <Button 
-                    variant="outlined" 
-                    onClick={() => setShowPasswordFields(true)}
-                    startIcon={<VpnKey />}
-                  >
-                    Change Password
-                  </Button>
-                </Box>
-              ) : (
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Keep your account secure by regularly updating your password
+                </Typography>
+                <Button 
+                  variant="outlined" 
+                  onClick={() => navigate('/change-password')}
+                  startIcon={<VpnKey />}
+                >
+                  Change Password
+                </Button>
+              </Box>
+              
+              {/* Legacy inline password change (kept for backward compatibility) */}
+              {false && showPasswordFields && (
                 <Grid container spacing={2}>
                   <Grid item xs={12}>
                     <TextField
@@ -977,7 +978,7 @@ const SettingsPage = () => {
             component="h1"
             sx={{
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+              background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',

@@ -91,7 +91,7 @@ const Footer = () => {
                 sx={{
                   fontWeight: 700,
                   mb: 2,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',

@@ -81,7 +81,7 @@ const ForgotPasswordPage = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+        background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
         display: 'flex',
         alignItems: 'center',
         py: 4,
@@ -109,7 +109,7 @@ const ForgotPasswordPage = () => {
                 component="h1"
                 sx={{
                   fontWeight: 700,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -204,9 +204,9 @@ const ForgotPasswordPage = () => {
                   sx={{
                     mb: 2,
                     py: 1.5,
-                    background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                    background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                     '&:hover': {
-                      background: 'linear-gradient(135deg, #000066 0%, #000080 100%)',
+                      background: 'linear-gradient(135deg, #0066CC 0%, #1E90FF 100%)',
                     },
                   }}
                 >
@@ -244,10 +244,10 @@ const ForgotPasswordPage = () => {
                   onClick={() => navigate('/login')}
                   sx={{
                     mb: 2,
-                    borderColor: '#000080',
-                    color: '#000080',
+                    borderColor: '#1E90FF',
+                    color: '#1E90FF',
                     '&:hover': {
-                      borderColor: '#000066',
+                      borderColor: '#0066CC',
                       backgroundColor: 'rgba(0, 0, 128, 0.04)',
                     },
                   }}

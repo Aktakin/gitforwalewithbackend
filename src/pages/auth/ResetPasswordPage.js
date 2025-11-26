@@ -100,28 +100,46 @@ const ResetPasswordPage = () => {
     setError(null);
 
     try {
-      // Get the access token from URL hash
+      // Get the access token and type from URL hash (Supabase format)
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const type = hashParams.get('type');
       
-      if (!accessToken) {
+      // Check if this is a recovery flow
+      if (type === 'recovery' && accessToken) {
+        // Set the session with the recovery tokens
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || '',
+        });
+
+        if (sessionError) {
+          throw new Error('Invalid or expired reset link. Please request a new password reset.');
+        }
+
+        // Now update the password (user is authenticated via recovery token)
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: formData.password
+        });
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        setSuccess(true);
+        setFormData({ password: '', confirmPassword: '' });
+        
+        // Sign out after password reset (security best practice)
+        await supabase.auth.signOut();
+        
+        // Redirect to login after 3 seconds
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
         throw new Error('Invalid reset link. Please request a new password reset.');
       }
-
-      // Update password using Supabase
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: formData.password
-      });
-
-      if (updateError) throw updateError;
-
-      setSuccess(true);
-      setFormData({ password: '', confirmPassword: '' });
-      
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
     } catch (error) {
       console.error('Password reset error:', error);
       setError(error.message || 'Failed to reset password. Please try again.');
@@ -134,7 +152,7 @@ const ResetPasswordPage = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+        background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
         display: 'flex',
         alignItems: 'center',
         py: 4,
@@ -162,7 +180,7 @@ const ResetPasswordPage = () => {
                 component="h1"
                 sx={{
                   fontWeight: 700,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -287,9 +305,9 @@ const ResetPasswordPage = () => {
                   sx={{
                     mb: 2,
                     py: 1.5,
-                    background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                    background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                     '&:hover': {
-                      background: 'linear-gradient(135deg, #000066 0%, #000080 100%)',
+                      background: 'linear-gradient(135deg, #0066CC 0%, #1E90FF 100%)',
                     },
                   }}
                 >
@@ -327,9 +345,9 @@ const ResetPasswordPage = () => {
                   onClick={() => navigate('/login')}
                   sx={{
                     mb: 2,
-                    background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                    background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                     '&:hover': {
-                      background: 'linear-gradient(135deg, #000066 0%, #000080 100%)',
+                      background: 'linear-gradient(135deg, #0066CC 0%, #1E90FF 100%)',
                     },
                   }}
                 >

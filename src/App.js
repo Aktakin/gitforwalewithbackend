@@ -14,6 +14,8 @@ import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import ChangePasswordPage from './pages/auth/ChangePasswordPage';
+import AuthCallbackPage from './pages/auth/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import SkillsPage from './pages/skills/SkillsPage';
 import SkillDetailPage from './pages/skills/SkillDetailPage';
@@ -33,6 +35,7 @@ import ClientDashboard from './pages/client/ClientDashboard';
 import BrowseSkillsPage from './pages/browse/BrowseSkillsPage';
 import CreateProposalPage from './pages/proposals/CreateProposalPage';
 import ViewProposalsPage from './pages/proposals/ViewProposalsPage';
+// import PaymentPage from './pages/payment/PaymentPage'; // Temporarily disabled
 import SupportPage from './pages/support/SupportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
@@ -94,10 +97,15 @@ const PageWrapper = ({ children }) => (
 function App() {
   const { loading } = useAuth();
 
+  // Log to verify App component is rendering
+  console.log('App component rendering, loading:', loading);
+
   if (loading) {
+    console.log('Showing loading spinner...');
     return <LoadingSpinner />;
   }
 
+  console.log('Rendering main app...');
   return (
     <Box sx={{ 
       display: 'flex', 
@@ -163,6 +171,28 @@ function App() {
                 </PublicRoute>
               } 
             />
+
+            {/* Change Password (Protected) */}
+            <Route 
+              path="/change-password" 
+              element={
+                <ProtectedRoute>
+                  <PageWrapper>
+                    <ChangePasswordPage />
+                  </PageWrapper>
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* OAuth Callback */}
+            <Route 
+              path="/auth/callback" 
+              element={
+                <PageWrapper>
+                  <AuthCallbackPage />
+                </PageWrapper>
+              } 
+            />
             
             <Route 
               path="/skills" 
@@ -223,6 +253,18 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+
+        {/* Payment - Temporarily Disabled */}
+        {/* <Route 
+          path="/payment/:paymentId" 
+          element={
+            <ProtectedRoute>
+              <PageWrapper>
+                <PaymentPage />
+              </PageWrapper>
+            </ProtectedRoute>
+          } 
+        /> */}
             
             <Route 
               path="/search" 
@@ -407,7 +449,18 @@ function App() {
               } 
             />
             
-                        <Route
+            {/* Profile Routes */}
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <PageWrapper>
+                    <ProfilePage />
+                  </PageWrapper>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/profile/:userId"
               element={
                 <PageWrapper>
@@ -467,17 +520,6 @@ function App() {
                 <ProtectedRoute>
                   <PageWrapper>
                     <CreateRequestPage />
-                  </PageWrapper>
-                </ProtectedRoute>
-              } 
-            />
-            
-            <Route 
-              path="/profile/edit" 
-              element={
-                <ProtectedRoute>
-                  <PageWrapper>
-                    <EditProfilePage />
                   </PageWrapper>
                 </ProtectedRoute>
               } 

@@ -34,7 +34,7 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
-  const { register, loading, error, clearError } = useAuth();
+  const { register, signInWithGoogle, loading, error, clearError } = useAuth();
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -121,21 +121,24 @@ const RegisterPage = () => {
     }
   };
 
-  const handleGoogleRegister = () => {
-    // Implement Google OAuth registration
-    console.log('Google register clicked');
+  const handleGoogleRegister = async () => {
+    const result = await signInWithGoogle();
+    if (!result.success) {
+      console.error('Google registration failed:', result.error);
+    }
+    // OAuth will redirect automatically, so we don't need to navigate manually
   };
 
   const handleFacebookRegister = () => {
-    // Implement Facebook OAuth registration
-    console.log('Facebook register clicked');
+    // Facebook OAuth not implemented yet
+    alert('Facebook registration coming soon!');
   };
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+        background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
         display: 'flex',
         alignItems: 'center',
         py: 4,
@@ -163,7 +166,7 @@ const RegisterPage = () => {
                 component="h1"
                 sx={{
                   fontWeight: 700,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -370,7 +373,7 @@ const RegisterPage = () => {
                   py: 1.5,
                   mb: 3,
                   fontWeight: 600,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                 }}
               >
                 {loading ? (

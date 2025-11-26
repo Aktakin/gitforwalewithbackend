@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "SkillBridge",
+    "slug": "skillbridge-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1E90FF",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.skillbridge.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1E90FF"
+      },
+      "package": "com.skillbridge.app"
+    },
+    "platforms": ["ios", "android"],
+    "extra": {
+      "supabaseUrl": "https://czarcdtcxrwajujqdowb.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6YXJjZHRjeHJ3YWp1anFkb3diIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyODQzODcsImV4cCI6MjA3Nzg2MDM4N30.99AyL7KQD3qUmKySaCjAClj7XmJWWb2oFHF8ntEy-l8"
+    }
+  }
+}

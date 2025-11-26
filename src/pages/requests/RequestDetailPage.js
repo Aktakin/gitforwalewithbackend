@@ -86,6 +86,11 @@ const RequestDetailPage = () => {
           return;
         }
 
+        // Increment view count (fire and forget - don't block UI)
+        db.requests.incrementViews(id).catch(err => {
+          console.warn('Failed to increment view count:', err);
+        });
+
         // Transform the request data
         const transformedRequest = transformRequest(dbRequest);
         
@@ -156,10 +161,10 @@ const RequestDetailPage = () => {
 
     fetchRequestDetails();
 
-    // Auto-refresh request details every 10 seconds to get updated proposal counts
+    // Auto-refresh request details every 60 seconds to get updated proposal counts
     const interval = setInterval(() => {
       fetchRequestDetails();
-    }, 10000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [id]);
@@ -203,12 +208,12 @@ const RequestDetailPage = () => {
 
     fetchProposals();
 
-    // Auto-refresh proposals every 10 seconds
+    // Auto-refresh proposals every 60 seconds
     const interval = setInterval(() => {
       if (request && user?.id && request.userId === user.id) {
         fetchProposals();
       }
-    }, 10000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [request?.id, request?.userId, user?.id]);

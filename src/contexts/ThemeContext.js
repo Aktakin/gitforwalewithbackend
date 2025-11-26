@@ -33,9 +33,9 @@ const CustomThemeProvider = ({ children }) => {
     palette: {
       mode: 'light',
       primary: {
-        main: '#000080',
-        light: '#3333FF',
-        dark: '#000066',
+        main: '#1E90FF',
+        light: '#5BB3FF',
+        dark: '#0066CC',
         contrastText: '#ffffff',
       },
       secondary: {
@@ -62,7 +62,7 @@ const CustomThemeProvider = ({ children }) => {
       info: {
         main: '#2196f3',
         light: '#64b5f6',
-        dark: '#000080',
+        dark: '#1E90FF',
       },
       background: {
         default: '#fafafa',

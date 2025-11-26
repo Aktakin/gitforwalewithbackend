@@ -138,12 +138,12 @@ const ViewProposalsPage = () => {
 
     fetchProposals();
 
-    // Auto-refresh proposals every 10 seconds
+    // Auto-refresh proposals every 60 seconds
     const interval = setInterval(() => {
       if (user?.id) {
         fetchProposals();
       }
-    }, 10000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [user?.id, requestId]);
@@ -177,14 +177,54 @@ const ViewProposalsPage = () => {
     try {
       const newStatus = actionType === 'accept' ? 'accepted' : 'rejected';
       
-      await db.proposals.update(selectedProposal.id, { status: newStatus });
+      console.log(`Updating proposal ${selectedProposal.id} to status: ${newStatus}`);
+      const updatedProposal = await db.proposals.update(selectedProposal.id, { status: newStatus });
+      console.log('Update result:', updatedProposal);
       
-      // Update local state immediately
-      setProposals(prev => prev.map(p => 
-        p.id === selectedProposal.id ? { ...p, status: newStatus } : p
-      ));
+      // Refetch proposals to get the latest data from database
+      let dbProposals = [];
+      if (requestId) {
+        dbProposals = await db.proposals.getByRequest(requestId);
+      } else {
+        // Fetch all proposals for user's requests
+        const userRequests = await db.requests.getAll({ userId: user.id });
+        const allProposals = [];
+        for (const request of userRequests) {
+          const requestProposals = await db.proposals.getByRequest(request.id);
+          allProposals.push(...requestProposals);
+        }
+        dbProposals = allProposals;
+      }
 
-      console.log(`${actionType} proposal:`, selectedProposal.id);
+      // Transform and update state with fresh data from database
+      const transformedProposals = dbProposals
+        .map(transformProposal)
+        .filter(p => p !== null)
+        .map(proposal => ({
+          id: proposal.id,
+          artisan: {
+            id: proposal.user?.id,
+            name: proposal.user?.name || 'Unknown User',
+            avatar: proposal.user?.avatar,
+            rating: 0,
+            reviews: 0,
+            isVerified: proposal.user?.isVerified || false,
+            location: proposal.user?.location?.city || 'Location not specified',
+          },
+          proposal: {
+            description: proposal.message || 'No message provided',
+            price: proposal.proposedPrice || 0,
+            timeline: proposal.estimatedDuration || 'Not specified',
+          },
+          submittedAt: proposal.createdAt,
+          status: proposal.status || 'pending',
+          requestId: proposal.requestId,
+          request: proposal.request,
+        }));
+
+      setProposals(transformedProposals);
+
+      console.log(`Successfully ${actionType}ed proposal:`, selectedProposal.id);
       setActionDialogOpen(false);
       setSelectedProposal(null);
       
@@ -394,7 +434,7 @@ const ViewProposalsPage = () => {
             component="h1"
             sx={{
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+              background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',

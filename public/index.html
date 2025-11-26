@@ -83,18 +83,29 @@
     <div id="root"></div>
     
     <script>
-      // Hide loading screen when React app is ready
-      window.addEventListener('load', function() {
-        setTimeout(function() {
-          const loading = document.getElementById('loading');
-          if (loading) {
-            loading.style.opacity = '0';
-            setTimeout(function() {
-              loading.style.display = 'none';
-            }, 300);
-          }
-        }, 1000);
-      });
+      // IMMEDIATE: Hide loading screen as fast as possible
+      function hideLoading() {
+        const loading = document.getElementById('loading');
+        if (loading) {
+          loading.style.display = 'none';
+        }
+      }
+      
+      // Hide immediately
+      setTimeout(hideLoading, 100);
+      
+      // Also try on load
+      window.addEventListener('load', hideLoading);
+      
+      // And on DOM ready
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        hideLoading();
+      } else {
+        document.addEventListener('DOMContentLoaded', hideLoading);
+      }
+      
+      // Fallback: hide after 1 second regardless
+      setTimeout(hideLoading, 1000);
     </script>
   </body>
 </html>

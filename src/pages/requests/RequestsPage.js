@@ -133,10 +133,10 @@ const RequestsPage = () => {
 
     fetchRequests();
 
-    // Auto-refresh requests every 15 seconds to get updated proposal counts
+    // Auto-refresh requests every 60 seconds to get updated proposal counts
     const interval = setInterval(() => {
       fetchRequests();
-    }, 15000);
+    }, 60000);
 
     return () => clearInterval(interval);
   }, []);
@@ -429,6 +429,10 @@ const RequestsPage = () => {
             <Typography variant="caption">
               {request.proposals || 0} proposals
             </Typography>
+            <Visibility sx={{ fontSize: 14, ml: 1 }} />
+            <Typography variant="caption">
+              {request.views || 0} views
+            </Typography>
             {request.location && (
               <>
                 <LocationOn sx={{ fontSize: 14, ml: 1 }} />
@@ -488,7 +492,7 @@ const RequestsPage = () => {
             component="h1"
             sx={{
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+              background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -705,7 +709,7 @@ const RequestsPage = () => {
             p: 6, 
             mt: 8, 
             textAlign: 'center',
-            background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+            background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
             color: 'white',
             borderRadius: 3
           }}

@@ -14,13 +14,14 @@ export const useAuth = () => {
 export const SupabaseAuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // START AS FALSE - CRITICAL FIX
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Check for existing session on mount
   useEffect(() => {
     let timeoutId;
+    let fallbackTimeout;
     let isMounted = true;
 
     // Check initial session with timeout
@@ -34,34 +35,16 @@ export const SupabaseAuthProvider = ({ children }) => {
             supabaseUrl === 'https://your-project.supabase.co' || 
             supabaseAnonKey === 'your-anon-key') {
           console.warn('Supabase not configured - skipping auth check');
-          if (isMounted) {
-            setLoading(false);
-          }
+          // Already loading = false, just return
           return;
         }
 
-        // Set a timeout to prevent hanging
-        timeoutId = setTimeout(() => {
-          if (isMounted) {
-            console.warn('Auth check timed out - setting loading to false');
-            setLoading(false);
-          }
-        }, 3000); // 3 second timeout
-
-        await checkSession();
-        
-        // Clear timeout if successful
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
+        // Quick background check without blocking
+        checkSession().catch(err => {
+          console.warn('Background auth check failed:', err);
+        });
       } catch (error) {
         console.error('Initial auth check failed:', error);
-        if (isMounted) {
-          setLoading(false);
-        }
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
       }
     };
 
@@ -70,35 +53,36 @@ export const SupabaseAuthProvider = ({ children }) => {
     // Listen for auth state changes
     let subscription;
     try {
-      const {
-        data: { subscription: sub },
-      } = supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email);
-        
-        if (isMounted) {
-          if (session?.user) {
-            await loadUserProfile(session.user);
-          } else {
-            setUser(null);
-            setProfile(null);
-            setIsAuthenticated(false);
-            setLoading(false);
+      // Only set up listener if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (supabaseUrl && supabaseAnonKey && 
+          supabaseUrl !== 'https://your-project.supabase.co' && 
+          supabaseAnonKey !== 'your-anon-key') {
+        const {
+          data: { subscription: sub },
+        } = supabase.auth.onAuthStateChange(async (event, session) => {
+          console.log('Auth state changed:', event, session?.user?.email);
+          
+          if (isMounted) {
+            if (session?.user) {
+              await loadUserProfile(session.user);
+            } else {
+              setUser(null);
+              setProfile(null);
+              setIsAuthenticated(false);
+            }
           }
-        }
-      });
-      subscription = sub;
+        });
+        subscription = sub;
+      }
     } catch (error) {
       console.error('Failed to set up auth listener:', error);
-      if (isMounted) {
-        setLoading(false);
-      }
     }
 
     return () => {
       isMounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
       if (subscription) {
         subscription.unsubscribe();
       }
@@ -120,12 +104,10 @@ export const SupabaseAuthProvider = ({ children }) => {
         await loadUserProfile(session.user);
       } else {
         console.log('No session found - user not logged in');
-        setLoading(false);
       }
     } catch (error) {
       console.error('Session check error:', error);
       setError(error.message || 'Failed to check authentication');
-      setLoading(false);
     }
   };
 
@@ -133,9 +115,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     // Set user immediately so user.id is available - CRITICAL for app to work
     setUser(authUser);
     setIsAuthenticated(true);
-    // Set loading to false IMMEDIATELY - don't wait for profile
-    setLoading(false);
-    console.log('Auth loading complete (user set, profile loading in background)');
+    console.log('User authenticated, loading profile in background');
 
     // Load profile in background - non-blocking
     (async () => {
@@ -224,8 +204,9 @@ export const SupabaseAuthProvider = ({ children }) => {
       if (!supabaseUrl || !supabaseKey || 
           supabaseUrl === 'https://your-project.supabase.co' || 
           supabaseKey === 'your-anon-key') {
+        console.warn('Supabase not configured - login will fail');
         throw new Error(
-          'Supabase not configured. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in your .env file. See SUPABASE_FRESH_START.md for instructions.'
+          'Supabase not configured. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in your .env file. See BACKEND_CONNECTION_GUIDE.md for instructions.'
         );
       }
 
@@ -245,7 +226,8 @@ export const SupabaseAuthProvider = ({ children }) => {
             'Failed to connect to Supabase. Please check:\n' +
             '1. Your .env file has correct REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY\n' +
             '2. You restarted your dev server after creating .env\n' +
-            '3. Your Supabase project is active and not paused'
+            '3. Your Supabase project is active and not paused\n' +
+            '4. Your internet connection is working'
           );
         }
         
@@ -253,13 +235,7 @@ export const SupabaseAuthProvider = ({ children }) => {
         if (authError.message.includes('Invalid login credentials') || 
             authError.message.includes('Invalid credentials') ||
             authError.status === 400) {
-          throw new Error(
-            'Invalid login credentials. Please check:\n' +
-            '1. Email is correct\n' +
-            '2. Password is correct\n' +
-            '3. User exists in Supabase (check Authentication → Users in Supabase Dashboard)\n' +
-            '4. User account is confirmed (check Auto Confirm User was set to Yes)'
-          );
+          throw new Error('Invalid email or password. Please try again.');
         }
         
         throw authError;
@@ -292,6 +268,18 @@ export const SupabaseAuthProvider = ({ children }) => {
     setError(null);
 
     try {
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey || 
+          supabaseUrl === 'https://your-project.supabase.co' || 
+          supabaseKey === 'your-anon-key') {
+        throw new Error(
+          'Supabase not configured. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in your .env file.'
+        );
+      }
+
       // Sign up with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
@@ -302,6 +290,7 @@ export const SupabaseAuthProvider = ({ children }) => {
             lastName: userData.lastName,
             userType: userData.userType,
           },
+          emailRedirectTo: `${window.location.origin}/login`,
         },
       });
 
@@ -409,16 +398,70 @@ export const SupabaseAuthProvider = ({ children }) => {
     setError(null);
 
     try {
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey || 
+          supabaseUrl === 'https://your-project.supabase.co' || 
+          supabaseKey === 'your-anon-key') {
+        throw new Error(
+          'Supabase not configured. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in your .env file.'
+        );
+      }
+
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (resetError) throw resetError;
 
-      return { success: true, message: 'Password reset email sent' };
+      return { success: true, message: 'Password reset email sent. Please check your inbox.' };
     } catch (error) {
       console.error('Password reset error:', error);
       const errorMessage = error.message || 'Failed to send reset email';
+      setError(errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey || 
+          supabaseUrl === 'https://your-project.supabase.co' || 
+          supabaseKey === 'your-anon-key') {
+        throw new Error(
+          'Supabase not configured. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in your .env file.'
+        );
+      }
+
+      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+
+      if (oauthError) throw oauthError;
+
+      // OAuth redirect will happen automatically
+      return { success: true, data };
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      const errorMessage = error.message || 'Failed to sign in with Google';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -462,6 +505,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     logout,
     updateProfile,
     resetPassword,
+    signInWithGoogle,
     clearError: () => setError(null),
     // Expose Supabase client for direct use if needed
     supabase,

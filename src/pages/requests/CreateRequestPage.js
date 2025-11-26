@@ -369,9 +369,11 @@ const CreateRequestPage = () => {
         status: 'open',
       };
 
+      console.log('[CreateRequest] Calling db.requests.create with:', supabaseRequestData);
+      
       const result = await db.requests.create(supabaseRequestData);
       
-      console.log('Request created successfully:', result);
+      console.log('[CreateRequest] Request created successfully:', result);
       
       showNotification('🎉 Request posted successfully! Service providers can now submit proposals.', 'success');
       
@@ -381,8 +383,13 @@ const CreateRequestPage = () => {
       }, 1500);
       
     } catch (error) {
-      console.error('Error creating request:', error);
-      showNotification('Failed to create request. Please try again.', 'error');
+      console.error('[CreateRequest] Full error object:', error);
+      console.error('[CreateRequest] Error message:', error.message);
+      console.error('[CreateRequest] Error code:', error.code);
+      console.error('[CreateRequest] Error details:', error.details);
+      console.error('[CreateRequest] Error hint:', error.hint);
+      
+      showNotification(`Failed to create request: ${error.message || 'Unknown error'}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -989,7 +996,7 @@ const CreateRequestPage = () => {
             component="h1" 
             gutterBottom
             sx={{
-              background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+              background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',

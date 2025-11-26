@@ -349,7 +349,7 @@ const ClientDashboard = () => {
                 component="h1"
                 sx={{
                   fontWeight: 700,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -383,9 +383,9 @@ const ClientDashboard = () => {
                   fontWeight: 600,
                   borderRadius: 2,
                   minHeight: { xs: 44, sm: 48 },
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   '&:hover': {
-                    background: 'linear-gradient(135deg, #000066 0%, #000080 100%)',
+                    background: 'linear-gradient(135deg, #0066CC 0%, #1E90FF 100%)',
                     transform: { xs: 'none', sm: 'translateY(-2px)' },
                     boxShadow: { xs: 'none', sm: '0 6px 20px rgba(0, 0, 128, 0.3)' },
                   },
@@ -407,10 +407,10 @@ const ClientDashboard = () => {
                   fontWeight: 600,
                   borderRadius: 2,
                   minHeight: { xs: 44, sm: 48 },
-                  borderColor: '#000080',
-                  color: '#000080',
+                  borderColor: '#1E90FF',
+                  color: '#1E90FF',
                   '&:hover': {
-                    borderColor: '#000066',
+                    borderColor: '#0066CC',
                     backgroundColor: 'rgba(0, 0, 128, 0.04)',
                     transform: { xs: 'none', sm: 'translateY(-2px)' },
                   },
@@ -471,7 +471,7 @@ const ClientDashboard = () => {
                       border: '1px solid #e0e0e0'
                     }}
                   >
-                    <Assignment sx={{ fontSize: 32, color: '#000080' }} />
+                    <Assignment sx={{ fontSize: 32, color: '#1E90FF' }} />
                   </Box>
                   <Typography variant="h3" sx={{ fontWeight: 800, mb: 1, color: '#333' }}>
                     {orderStats.activeOrders}
@@ -713,7 +713,7 @@ const ClientDashboard = () => {
                           boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                         }}
                       >
-                        <Schedule sx={{ color: '#000080', fontSize: 24 }} />
+                        <Schedule sx={{ color: '#1E90FF', fontSize: 24 }} />
                       </Box>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: '#333' }}>
                         {orders.filter(o => o.status === 'in_progress').length}
@@ -796,7 +796,7 @@ const ClientDashboard = () => {
                   🎯 Success Rate
                 </Typography>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h2" sx={{ fontWeight: 800, mb: 1, color: '#000080' }}>
+                  <Typography variant="h2" sx={{ fontWeight: 800, mb: 1, color: '#1E90FF' }}>
                     {Math.round((orderStats.completedOrders / (orderStats.activeOrders + orderStats.completedOrders)) * 100)}%
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#666' }}>
@@ -902,7 +902,7 @@ const ClientDashboard = () => {
             p: 4, 
             mt: 4, 
             textAlign: 'center',
-            background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+            background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
             color: 'white'
           }}
         >

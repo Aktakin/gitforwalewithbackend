@@ -27,7 +27,7 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loading, error, clearError } = useAuth();
+  const { login, signInWithGoogle, loading, error, clearError } = useAuth();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -94,21 +94,24 @@ const LoginPage = () => {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Implement Google OAuth login
-    console.log('Google login clicked');
+  const handleGoogleLogin = async () => {
+    const result = await signInWithGoogle();
+    if (!result.success) {
+      console.error('Google login failed:', result.error);
+    }
+    // OAuth will redirect automatically, so we don't need to navigate manually
   };
 
   const handleFacebookLogin = () => {
-    // Implement Facebook OAuth login
-    console.log('Facebook login clicked');
+    // Facebook OAuth not implemented yet
+    alert('Facebook login coming soon!');
   };
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+        background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
         display: 'flex',
         alignItems: 'center',
         py: 4,
@@ -136,7 +139,7 @@ const LoginPage = () => {
                 component="h1"
                 sx={{
                   fontWeight: 700,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
@@ -230,7 +233,7 @@ const LoginPage = () => {
                   py: 1.5,
                   mb: 3,
                   fontWeight: 600,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                 }}
               >
                 {loading ? (

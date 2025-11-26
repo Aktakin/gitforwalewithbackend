@@ -33,7 +33,7 @@ export const transformRequest = (dbRequest) => {
     proposals: dbRequest.proposal_count !== undefined 
       ? dbRequest.proposal_count 
       : (Array.isArray(dbRequest.proposals) ? dbRequest.proposals.length : 0),
-    views: 0, // TODO: Add views tracking to database
+    views: dbRequest.views || 0
   };
 };
 

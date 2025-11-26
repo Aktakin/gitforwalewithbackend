@@ -89,7 +89,7 @@ const HowItWorksPage = () => {
         <Box sx={{ textAlign: 'center', mb: 8 }}>
           <Typography variant="h2" component="h1" gutterBottom sx={{ 
             fontWeight: 700,
-            background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+            background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',

@@ -31,7 +31,7 @@ import { useNavigate } from 'react-router-dom';
 
 const SignInModal = ({ open, onClose, redirectTo = '/dashboard' }) => {
   const navigate = useNavigate();
-  const { login, register, loading, error, clearError } = useAuth();
+  const { login, register, signInWithGoogle, loading, error, clearError } = useAuth();
   const [activeTab, setActiveTab] = useState(0); // 0 = Sign In, 1 = Sign Up
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -155,12 +155,17 @@ const SignInModal = ({ open, onClose, redirectTo = '/dashboard' }) => {
     }
   };
 
-  const handleGoogleAuth = () => {
-    console.log('Google authentication clicked');
+  const handleGoogleAuth = async () => {
+    const result = await signInWithGoogle();
+    if (!result.success) {
+      console.error('Google authentication failed:', result.error);
+    }
+    // OAuth will redirect automatically, so we don't need to navigate manually
   };
 
   const handleFacebookAuth = () => {
-    console.log('Facebook authentication clicked');
+    // Facebook OAuth not implemented yet
+    alert('Facebook authentication coming soon!');
   };
 
   const handleClose = () => {
@@ -199,7 +204,7 @@ const SignInModal = ({ open, onClose, redirectTo = '/dashboard' }) => {
             variant="h5"
             sx={{
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+              background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -312,7 +317,7 @@ const SignInModal = ({ open, onClose, redirectTo = '/dashboard' }) => {
                   py: 1.5,
                   mb: 3,
                   fontWeight: 600,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                 }}
               >
                 {loading ? (
@@ -445,7 +450,7 @@ const SignInModal = ({ open, onClose, redirectTo = '/dashboard' }) => {
                   py: 1.5,
                   mb: 3,
                   fontWeight: 600,
-                  background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+                  background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
                 }}
               >
                 {loading ? (

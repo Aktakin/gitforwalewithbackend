@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Paper,
@@ -15,6 +15,8 @@ import {
   LinearProgress,
   IconButton,
   Alert,
+  Snackbar,
+  CircularProgress,
 } from '@mui/material';
 import {
   Edit,
@@ -31,20 +33,121 @@ import {
   GitHub,
   LinkedIn,
   Public,
+  Share as ShareIcon,
+  ContentCopy,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
+import { db } from '../../lib/supabase';
 import { format } from 'date-fns';
 
 const ProfilePage = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
-  const { user, mockData } = useAuth();
+  const { user } = useAuth();
+  
+  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState(null);
+  const [userSkills, setUserSkills] = useState([]);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
-  // Get user data from context - either current user or user by ID
-  const userData = userId === user?._id ? user : mockData?.users?.find(u => u._id === userId) || user;
-  const isOwnProfile = !userId || userId === user?._id;
+  const isOwnProfile = !userId || userId === user?.id;
+
+  // Load user profile data
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        setLoading(true);
+        
+        if (isOwnProfile) {
+          // For own profile, use current user data
+          setUserData(user);
+          
+          // Load skills if user is a provider
+          if (user?.id && (user?.user_type === 'provider' || user?.user_type === 'both')) {
+            const skills = await db.skills.getUserSkills(user.id);
+            setUserSkills(skills || []);
+          }
+        } else {
+          // For other users, fetch their public profile
+          const profileData = await db.users.getPublicProfile(userId);
+          
+          // Transform snake_case to camelCase for consistency with UI
+          const transformedData = {
+            ...profileData,
+            firstName: profileData.first_name,
+            lastName: profileData.last_name,
+            userType: profileData.user_type,
+            profilePicture: profileData.profile_picture,
+            isVerified: profileData.is_verified,
+            linkedIn: profileData.linkedin_url,
+            github: profileData.github_url,
+            joinedAt: profileData.created_at,
+          };
+          
+          setUserData(transformedData);
+          
+          // Load skills if user is a provider
+          if (profileData.user_type === 'provider' || profileData.user_type === 'both') {
+            const skills = await db.skills.getUserSkills(userId);
+            setUserSkills(skills || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading profile:', error);
+        setUserData(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (user || userId) {
+      loadProfile();
+    }
+  }, [userId, user, isOwnProfile]);
+
+  const handleEditProfile = () => {
+    navigate('/profile/edit');
+  };
+
+  const handleCopyProfileLink = () => {
+    const profileUrl = `${window.location.origin}/profile/${userId || user?.id}`;
+    navigator.clipboard.writeText(profileUrl);
+    setSnackbarMessage('Profile link copied to clipboard!');
+    setSnackbarOpen(true);
+  };
+
+  const handleShareProfile = async () => {
+    const profileUrl = `${window.location.origin}/profile/${userId || user?.id}`;
+    const displayName = getDisplayName();
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${displayName} - SkillBridge Profile`,
+          text: `Check out ${displayName}'s profile on SkillBridge!`,
+          url: profileUrl,
+        });
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Error sharing:', error);
+          handleCopyProfileLink();
+        }
+      }
+    } else {
+      handleCopyProfileLink();
+    }
+  };
+
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <CircularProgress />
+      </Container>
+    );
+  }
 
   if (!userData) {
     return (
@@ -54,18 +157,17 @@ const ProfilePage = () => {
     );
   }
 
-  const handleEditProfile = () => {
-    navigate('/profile/edit');
-  };
-
   const getDisplayLocation = () => {
+    if (typeof userData.location === 'string') {
+      return userData.location || 'Location not specified';
+    }
     const { city, state, country } = userData.location || {};
     const parts = [city, state, country].filter(Boolean);
     return parts.length > 0 ? parts.join(', ') : 'Location not specified';
   };
 
   const getDisplayName = () => {
-    return `${userData.firstName || 'First'} ${userData.lastName || 'Last'}`;
+    return `${userData.firstName || userData.first_name || 'First'} ${userData.lastName || userData.last_name || 'Last'}`.trim();
   };
 
   return (
@@ -160,15 +262,47 @@ const ProfilePage = () => {
 
             <Grid item xs={12} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                {isOwnProfile && (
+                {isOwnProfile ? (
+                  <>
+                    <Button
+                      variant="contained"
+                      startIcon={<Edit />}
+                      onClick={handleEditProfile}
+                      fullWidth
+                      sx={{ mb: 2 }}
+                    >
+                      Edit Profile
+                    </Button>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                      <Button
+                        variant="outlined"
+                        startIcon={<ContentCopy />}
+                        onClick={handleCopyProfileLink}
+                        fullWidth
+                        size="small"
+                      >
+                        Copy Link
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<ShareIcon />}
+                        onClick={handleShareProfile}
+                        fullWidth
+                        size="small"
+                      >
+                        Share
+                      </Button>
+                    </Box>
+                  </>
+                ) : (
                   <Button
-                    variant="contained"
-                    startIcon={<Edit />}
-                    onClick={handleEditProfile}
+                    variant="outlined"
+                    startIcon={<ShareIcon />}
+                    onClick={handleShareProfile}
                     fullWidth
                     sx={{ mb: 2 }}
                   >
-                    Edit Profile
+                    Share Profile
                   </Button>
                 )}
                 
@@ -210,17 +344,17 @@ const ProfilePage = () => {
         </Paper>
 
         {/* Skills Section */}
-        {(userData.userType === 'provider' || userData.userType === 'both') && (
+        {(userData.userType === 'provider' || userData.userType === 'both' || userData.user_type === 'provider' || userData.user_type === 'both') && (
           <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
             <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Work color="primary" />
               Skills & Services
             </Typography>
             
-            {userData.skills && userData.skills.length > 0 ? (
+            {userSkills && userSkills.length > 0 ? (
               <Grid container spacing={2}>
-                {userData.skills.map((skill) => (
-                  <Grid item xs={12} sm={6} md={4} key={skill._id || skill.title}>
+                {userSkills.map((skill) => (
+                  <Grid item xs={12} sm={6} md={4} key={skill.id || skill._id || skill.title}>
                     <Card>
                       <CardContent>
                         <Typography variant="h6" component="div" gutterBottom>
@@ -232,15 +366,15 @@ const ProfilePage = () => {
                         <Typography variant="body2" sx={{ mb: 2 }}>
                           {skill.description}
                         </Typography>
-                        {skill.hourlyRate && (
+                        {(skill.hourlyRate || skill.hourly_rate) && (
                           <Typography variant="h6" color="primary" gutterBottom>
-                            ${skill.hourlyRate}/hour
+                            ${skill.hourlyRate || skill.hourly_rate}/hour
                           </Typography>
                         )}
                         {skill.tags && skill.tags.length > 0 && (
                           <Box>
-                            {skill.tags.map((tag) => (
-                              <Chip key={tag} label={tag} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
+                            {skill.tags.map((tag, idx) => (
+                              <Chip key={`${tag}-${idx}`} label={tag} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
                             ))}
                           </Box>
                         )}
@@ -258,7 +392,7 @@ const ProfilePage = () => {
         )}
 
         {/* Empty State Message for New Users */}
-        {isOwnProfile && (!userData.bio && (!userData.skills || userData.skills.length === 0)) && (
+        {isOwnProfile && (!userData.bio && (!userSkills || userSkills.length === 0)) && (
           <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
             <Typography variant="h6" gutterBottom>
               Welcome to SkillBridge!
@@ -276,6 +410,15 @@ const ProfilePage = () => {
             </Button>
           </Paper>
         )}
+
+        {/* Snackbar for notifications */}
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={3000}
+          onClose={() => setSnackbarOpen(false)}
+          message={snackbarMessage}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        />
       </motion.div>
     </Container>
   );

@@ -231,7 +231,7 @@ const HomePage = () => {
       {/* Hero Section */}
       <Box
         sx={{
-          background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+          background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
           color: 'white',
           py: { xs: 8, md: 12 },
           overflow: 'hidden',
@@ -942,7 +942,7 @@ const HomePage = () => {
       <Box
         sx={{
           py: 8,
-          background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+          background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
           color: 'white',
         }}
       >

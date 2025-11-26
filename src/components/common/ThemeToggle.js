@@ -89,7 +89,7 @@ const ThemeToggle = ({ variant = 'icon' }) => {
                   transform: 'translateX(28px)',
                   color: '#fff',
                   '& + .MuiSwitch-track': {
-                    backgroundColor: isDarkMode ? '#5C7FFF' : '#000080',
+                    backgroundColor: isDarkMode ? '#5C7FFF' : '#1E90FF',
                     opacity: 1,
                     border: 0,
                   },

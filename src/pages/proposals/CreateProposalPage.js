@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   Container,
   Grid,
@@ -60,6 +60,90 @@ import { transformRequest, transformUser, formatTimeAgo, formatDeadline } from '
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { CircularProgress, Alert as MuiAlert, AlertTitle } from '@mui/material';
 
+// Proposal Step Component - Defined outside and NOT memoized to test
+const ProposalStepContent = ({ 
+  coverLetter, 
+  experience, 
+  portfolio, 
+  questions,
+  onCoverLetterChange,
+  onExperienceChange,
+  onPortfolioChange,
+  onQuestionsChange
+}) => {
+  return (
+    <Box>
+      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
+        Craft Your Proposal
+      </Typography>
+
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+            Cover Letter *
+          </Typography>
+          <TextField
+            id="cover-letter-input"
+            fullWidth
+            multiline
+            rows={8}
+            placeholder="Introduce yourself and explain why you're the perfect fit for this project. Highlight your relevant experience, approach, and what makes you unique..."
+            value={coverLetter}
+            onChange={onCoverLetterChange}
+            sx={{ mb: 3 }}
+          />
+
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+            Relevant Experience
+          </Typography>
+          <TextField
+            id="experience-input"
+            fullWidth
+            multiline
+            rows={4}
+            placeholder="Describe your relevant experience with similar projects. Include specific examples and achievements..."
+            value={experience}
+            onChange={onExperienceChange}
+            sx={{ mb: 3 }}
+          />
+
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+            Portfolio Links (Optional)
+          </Typography>
+          <TextField
+            id="portfolio-input"
+            fullWidth
+            placeholder="Share links to your relevant work, GitHub repos, or live demos..."
+            value={portfolio}
+            onChange={onPortfolioChange}
+            sx={{ mb: 3 }}
+          />
+
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+            Questions for the Client
+          </Typography>
+          <TextField
+            id="questions-input"
+            fullWidth
+            multiline
+            rows={3}
+            placeholder="Ask any clarifying questions about the project requirements, scope, or expectations..."
+            value={questions}
+            onChange={onQuestionsChange}
+          />
+        </CardContent>
+      </Card>
+
+      <Alert severity="warning" sx={{ mb: 2 }}>
+        <Typography variant="body2">
+          <strong>Tip:</strong> Personalize your proposal by addressing the client's specific needs. 
+          Avoid generic templates and show that you've read the project carefully.
+        </Typography>
+      </Alert>
+    </Box>
+  );
+};
+
 const CreateProposalPage = () => {
   const navigate = useNavigate();
   const { requestId } = useParams();
@@ -104,15 +188,21 @@ const CreateProposalPage = () => {
         setError(null);
         
         console.log('Fetching request data for proposal:', requestId);
+        console.log('Current user:', user?.id, user?.email);
         
         // Fetch request from database
         const dbRequest = await db.requests.getById(requestId);
         
+        console.log('DB Request result:', dbRequest);
+        
         if (!dbRequest) {
-          setError('Request not found');
+          console.error('Request not found. Request ID:', requestId, 'User ID:', user?.id);
+          setError('Request not found or you do not have permission to view it. The request may have been removed or marked as private.');
           setLoading(false);
           return;
         }
+        
+        console.log('Request loaded successfully:', dbRequest.id, dbRequest.title);
 
         // Transform the request data
         const transformedRequest = transformRequest(dbRequest);
@@ -185,7 +275,7 @@ const CreateProposalPage = () => {
 
   const steps = ['Project Details', 'Your Proposal', 'Budget & Timeline', 'Review & Submit'];
 
-  // Memoized handlers to prevent re-renders
+  // Memoized handlers to ensure stable references
   const handleCoverLetterChange = useCallback((e) => {
     setProposalData(prev => ({ ...prev, coverLetter: e.target.value }));
   }, []);
@@ -303,6 +393,7 @@ const CreateProposalPage = () => {
     if (!budget || !budget.min || !budget.max) return 'Not specified';
     return `$${budget.min.toLocaleString()} - $${budget.max.toLocaleString()}`;
   };
+
 
   // Show loading state
   if (loading) {
@@ -441,82 +532,7 @@ const CreateProposalPage = () => {
     </Box>
   );
 
-  // Step 2: Your Proposal
-  const ProposalStep = () => (
-    <Box>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-        Craft Your Proposal
-      </Typography>
-
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-            Cover Letter *
-          </Typography>
-          <TextField
-            id="cover-letter-input"
-            key="cover-letter-input"
-            fullWidth
-            multiline
-            rows={8}
-            placeholder="Introduce yourself and explain why you're the perfect fit for this project. Highlight your relevant experience, approach, and what makes you unique..."
-            value={proposalData.coverLetter}
-            onChange={handleCoverLetterChange}
-            sx={{ mb: 3 }}
-          />
-
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-            Relevant Experience
-          </Typography>
-          <TextField
-            id="experience-input"
-            key="experience-input"
-            fullWidth
-            multiline
-            rows={4}
-            placeholder="Describe your relevant experience with similar projects. Include specific examples and achievements..."
-            value={proposalData.experience}
-            onChange={handleExperienceChange}
-            sx={{ mb: 3 }}
-          />
-
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-            Portfolio Links (Optional)
-          </Typography>
-          <TextField
-            id="portfolio-input"
-            key="portfolio-input"
-            fullWidth
-            placeholder="Share links to your relevant work, GitHub repos, or live demos..."
-            value={proposalData.portfolio}
-            onChange={handlePortfolioChange}
-            sx={{ mb: 3 }}
-          />
-
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-            Questions for the Client
-          </Typography>
-          <TextField
-            id="questions-input"
-            key="questions-input"
-            fullWidth
-            multiline
-            rows={3}
-            placeholder="Ask any clarifying questions about the project requirements, scope, or expectations..."
-            value={proposalData.questions}
-            onChange={handleQuestionsChange}
-          />
-        </CardContent>
-      </Card>
-
-      <Alert severity="warning" sx={{ mb: 2 }}>
-        <Typography variant="body2">
-          <strong>Tip:</strong> Personalize your proposal by addressing the client's specific needs. 
-          Avoid generic templates and show that you've read the project carefully.
-        </Typography>
-      </Alert>
-    </Box>
-  );
+  // Step 2: Your Proposal - Render content directly (no wrapper function)
 
   // Step 3: Budget & Timeline
   const BudgetTimelineStep = () => (
@@ -550,7 +566,6 @@ const CreateProposalPage = () => {
               </Typography>
               <TextField
                 id="budget-input"
-                key="budget-input"
                 fullWidth
                 type="number"
                 value={proposalData.budget}
@@ -579,7 +594,6 @@ const CreateProposalPage = () => {
               
               <TextField
                 id="timeline-input"
-                key="timeline-input"
                 fullWidth
                 placeholder="e.g., 6 weeks, 2 months, etc."
                 value={proposalData.timeline}
@@ -775,17 +789,29 @@ const CreateProposalPage = () => {
     </Box>
   );
 
-  // Get step content - don't memoize to allow updates when proposalData changes
+  // Get step content function
   const getStepContent = () => {
     switch (activeStep) {
       case 0:
-        return <ProjectDetailsStep />;
+        return <ProjectDetailsStep key="step-0" />;
       case 1:
-        return <ProposalStep />;
+        return (
+          <ProposalStepContent
+            key="step-1"
+            coverLetter={proposalData.coverLetter}
+            experience={proposalData.experience}
+            portfolio={proposalData.portfolio}
+            questions={proposalData.questions}
+            onCoverLetterChange={handleCoverLetterChange}
+            onExperienceChange={handleExperienceChange}
+            onPortfolioChange={handlePortfolioChange}
+            onQuestionsChange={handleQuestionsChange}
+          />
+        );
       case 2:
-        return <BudgetTimelineStep />;
+        return <BudgetTimelineStep key="step-2" />;
       case 3:
-        return <ReviewSubmitStep />;
+        return <ReviewSubmitStep key="step-3" />;
       default:
         return 'Unknown step';
     }
@@ -833,7 +859,7 @@ const CreateProposalPage = () => {
           sx={{
             fontWeight: 700,
             mb: 1,
-            background: 'linear-gradient(135deg, #000080 0%, #3333FF 100%)',
+            background: 'linear-gradient(135deg, #1E90FF 0%, #5BB3FF 100%)',
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',

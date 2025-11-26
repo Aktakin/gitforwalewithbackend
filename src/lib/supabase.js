@@ -83,6 +83,34 @@ export const db = {
       if (error) throw error;
       return data;
     },
+
+    // Get public profile for any user (for viewing other user profiles)
+    getPublicProfile: async (userId) => {
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          id,
+          email,
+          first_name,
+          last_name,
+          bio,
+          user_type,
+          profile_picture,
+          is_verified,
+          location,
+          website,
+          linkedin_url,
+          github_url,
+          phone_number,
+          created_at,
+          rating
+        `)
+        .eq('id', userId)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
   },
 
   // Skills table operations
@@ -138,7 +166,7 @@ export const db = {
     getPublicSkills: async (filters = {}) => {
       let query = supabase
         .from('skills')
-        .select('*, users(*)')
+        .select('*')
         .eq('is_active', true)
         .eq('is_public', true);
 
@@ -152,7 +180,33 @@ export const db = {
       const { data, error } = await query.order('created_at', { ascending: false });
       
       if (error) throw error;
-      return data;
+      if (!data || data.length === 0) return [];
+      
+      // Fetch user data separately for each skill
+      const skillsWithUsers = await Promise.all(
+        data.map(async (skill) => {
+          let userData = null;
+          if (skill.user_id) {
+            try {
+              const { data: user } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', skill.user_id)
+                .maybeSingle();
+              userData = user;
+            } catch (err) {
+              console.warn('Error fetching user for skill:', err);
+            }
+          }
+          return {
+            ...skill,
+            users: userData,
+            user: userData
+          };
+        })
+      );
+      
+      return skillsWithUsers;
     },
   },
 
@@ -160,10 +214,10 @@ export const db = {
   requests: {
     // Get all requests
     getAll: async (filters = {}) => {
-      // First fetch requests
+      // Fetch requests without joins to avoid JSON coercion issues
       let query = supabase
         .from('requests')
-        .select('*, users(*)')
+        .select('*')
         .order('created_at', { ascending: false });
 
       // Apply filters
@@ -198,9 +252,10 @@ export const db = {
       const to = from + pageSize - 1;
       query = query.range(from, to);
 
-      const { data, error } = await query;
+      const { data, error} = await query;
       
       if (error) throw error;
+      if (!data || data.length === 0) return [];
       
       // Fetch proposal counts for all requests separately
       // Use count queries which respect RLS but still give us totals
@@ -239,13 +294,32 @@ export const db = {
         }
       }
       
-      // Process the data to add proposal count
-      const requestsWithCounts = data.map(request => ({
-        ...request,
-        proposal_count: proposalCountsMap[request.id] || 0
-      }));
+      // Fetch user data separately for each request
+      const requestsWithUsers = await Promise.all(
+        data.map(async (request) => {
+          let userData = null;
+          if (request.user_id) {
+            try {
+              const { data: user } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', request.user_id)
+                .maybeSingle();
+              userData = user;
+            } catch (err) {
+              console.warn('Error fetching user for request:', err);
+            }
+          }
+          return {
+            ...request,
+            users: userData,
+            user: userData,
+            proposal_count: proposalCountsMap[request.id] || 0
+          };
+        })
+      );
       
-      return requestsWithCounts;
+      return requestsWithUsers;
     },
 
     // Count requests (for pagination)
@@ -275,36 +349,73 @@ export const db = {
 
     // Get single request
     getById: async (requestId) => {
-      const { data, error } = await supabase
-        .from('requests')
-        .select('*, users(*)')
-        .eq('id', requestId)
-        .single();
-      
-      if (error) throw error;
-      
-      // Fetch proposal count separately to get accurate count
-      let proposalCount = 0;
       try {
-        const { count, error: countError } = await supabase
-          .from('proposals')
-          .select('*', { count: 'exact', head: true })
-          .eq('request_id', requestId);
+        console.log('[requests.getById] Fetching request:', requestId);
         
-        if (!countError && count !== null) {
-          proposalCount = count;
+        // Try simple query first (without relations to avoid JSON coercion issues)
+        const { data, error } = await supabase
+          .from('requests')
+          .select('*')
+          .eq('id', requestId)
+          .maybeSingle();
+        
+        console.log('[requests.getById] Query result:', { data, error });
+        
+        if (error) {
+          console.error('[requests.getById] Error:', error);
+          throw error;
         }
+        if (!data) {
+          console.warn('[requests.getById] Request not found or not accessible:', requestId);
+          return null;
+        }
+        
+        console.log('[requests.getById] Request found:', data.id, data.title, data.status);
+        
+        // Fetch user data separately
+        let userData = null;
+        if (data.user_id) {
+          try {
+            const { data: user, error: userError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', data.user_id)
+              .maybeSingle();
+            
+            if (!userError && user) {
+              userData = user;
+            }
+          } catch (userErr) {
+            console.warn('Error fetching user data:', userErr);
+          }
+        }
+        
+        // Fetch proposal count separately to get accurate count
+        let proposalCount = 0;
+        try {
+          const { count, error: countError } = await supabase
+            .from('proposals')
+            .select('*', { count: 'exact', head: true })
+            .eq('request_id', requestId);
+          
+          if (!countError && count !== null) {
+            proposalCount = count;
+          }
+        } catch (err) {
+          console.warn('Error fetching proposal count:', err);
+        }
+        
+        // Return with user data and proposal count
+        return {
+          ...data,
+          users: userData,
+          user: userData,
+          proposal_count: proposalCount
+        };
       } catch (err) {
-        console.warn('Error fetching proposal count:', err);
+        console.error('Error fetching request:', err);
+        throw err;
       }
-      
-      // Add proposal count
-      const requestWithCount = {
-        ...data,
-        proposal_count: proposalCount
-      };
-      
-      return requestWithCount;
     },
 
     // Delete a request
@@ -319,13 +430,25 @@ export const db = {
 
     // Create a new request
     create: async (requestData) => {
+      console.log('[db.requests.create] Input data:', requestData);
+      
       const { data, error } = await supabase
         .from('requests')
         .insert(requestData)
         .select()
         .single();
       
-      if (error) throw error;
+      console.log('[db.requests.create] Supabase response:', { data, error });
+      
+      if (error) {
+        console.error('[db.requests.create] Supabase error:', error);
+        console.error('[db.requests.create] Error code:', error.code);
+        console.error('[db.requests.create] Error message:', error.message);
+        console.error('[db.requests.create] Error details:', error.details);
+        console.error('[db.requests.create] Error hint:', error.hint);
+        throw error;
+      }
+      
       return data;
     },
 
@@ -341,31 +464,118 @@ export const db = {
       if (error) throw error;
       return data;
     },
+
+    // Increment view count for a request
+    incrementViews: async (requestId) => {
+      try {
+        // Call the database function to increment views
+        const { data, error } = await supabase.rpc('increment_request_views', {
+          request_id_param: requestId
+        });
+
+        if (error) {
+          console.warn('Error incrementing views via RPC:', error);
+          // Fallback: increment directly
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('requests')
+            .update({ views: supabase.raw('COALESCE(views, 0) + 1') })
+            .eq('id', requestId)
+            .select('views')
+            .single();
+          
+          if (fallbackError) throw fallbackError;
+          return fallbackData?.views || 0;
+        }
+
+        return data || 0;
+      } catch (err) {
+        console.error('Error incrementing request views:', err);
+        return 0;
+      }
+    },
   },
 
   // Proposals table operations
   proposals: {
     // Get proposals for a request
     getByRequest: async (requestId) => {
+      // Fetch proposals without joins to avoid JSON coercion issues
       const { data, error } = await supabase
         .from('proposals')
-        .select('*, users(*)')
+        .select('*')
         .eq('request_id', requestId)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
+      
+      // Fetch user data separately for each proposal
+      if (data && data.length > 0) {
+        const proposalsWithUsers = await Promise.all(
+          data.map(async (proposal) => {
+            let userData = null;
+            if (proposal.user_id) {
+              try {
+                const { data: user } = await supabase
+                  .from('users')
+                  .select('*')
+                  .eq('id', proposal.user_id)
+                  .maybeSingle();
+                userData = user;
+              } catch (err) {
+                console.warn('Error fetching user for proposal:', err);
+              }
+            }
+            return {
+              ...proposal,
+              users: userData,
+              user: userData
+            };
+          })
+        );
+        return proposalsWithUsers;
+      }
+      
       return data;
     },
 
     // Get proposals for a user
     getUserProposals: async (userId) => {
+      // Fetch proposals without joins to avoid JSON coercion issues
       const { data, error } = await supabase
         .from('proposals')
-        .select('*, requests(*)')
+        .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
+      
+      // Fetch request data separately for each proposal
+      if (data && data.length > 0) {
+        const proposalsWithRequests = await Promise.all(
+          data.map(async (proposal) => {
+            let requestData = null;
+            if (proposal.request_id) {
+              try {
+                const { data: request } = await supabase
+                  .from('requests')
+                  .select('*')
+                  .eq('id', proposal.request_id)
+                  .maybeSingle();
+                requestData = request;
+              } catch (err) {
+                console.warn('Error fetching request for proposal:', err);
+              }
+            }
+            return {
+              ...proposal,
+              requests: requestData,
+              request: requestData
+            };
+          })
+        );
+        return proposalsWithRequests;
+      }
+      
       return data;
     },
 
@@ -410,7 +620,7 @@ export const db = {
         .from('requests')
         .select('user_id, title')
         .eq('id', proposalData.request_id)
-        .single();
+        .maybeSingle();
 
       if (requestData && requestData.user_id !== proposalData.user_id) {
         // Get proposal submitter info
@@ -418,7 +628,7 @@ export const db = {
           .from('users')
           .select('first_name, last_name, email')
           .eq('id', proposalData.user_id)
-          .single();
+          .maybeSingle();
 
         const submitterName = submitterData
           ? `${submitterData.first_name || ''} ${submitterData.last_name || ''}`.trim() || submitterData.email
@@ -442,64 +652,100 @@ export const db = {
 
     // Update a proposal (allows request owner to accept/reject)
     update: async (proposalId, updates) => {
-      // First get the proposal with request info to check permissions and get old status
-      const { data: proposal, error: fetchError } = await supabase
-        .from('proposals')
-        .select('*, requests!inner(id, user_id, title)')
-        .eq('id', proposalId)
-        .single();
+      try {
+        // First get the proposal without relations to avoid JSON coercion issues
+        const { data: proposal, error: fetchError } = await supabase
+          .from('proposals')
+          .select('*')
+          .eq('id', proposalId)
+          .maybeSingle();
 
-      if (fetchError) throw fetchError;
+        if (fetchError) throw fetchError;
+        if (!proposal) throw new Error('Proposal not found');
 
-      const oldStatus = proposal.status;
-      const requestData = Array.isArray(proposal.requests) ? proposal.requests[0] : proposal.requests;
+        const oldStatus = proposal.status;
 
-      // Update the proposal
-      const { data, error } = await supabase
-        .from('proposals')
-        .update(updates)
-        .eq('id', proposalId)
-        .select()
-        .single();
-      
-      if (error) throw error;
+        // Get request data separately
+        let requestData = null;
+        if (proposal.request_id) {
+          const { data: request } = await supabase
+            .from('requests')
+            .select('id, user_id, title')
+            .eq('id', proposal.request_id)
+            .maybeSingle();
+          requestData = request;
+        }
 
-      // If status changed, notify the proposal submitter
-      if (updates.status && updates.status !== oldStatus && requestData) {
-        // Get request owner info for notification
-        const { data: requestOwnerData } = await supabase
-          .from('users')
-          .select('first_name, last_name, email')
-          .eq('id', requestData.user_id)
-          .single();
+        // Update the proposal - don't use .single() to avoid coercion issues
+        console.log('[Proposals.update] Updating proposal:', proposalId, 'with updates:', updates);
+        const { data: updateResult, error } = await supabase
+          .from('proposals')
+          .update(updates)
+          .eq('id', proposalId)
+          .select();
+        
+        if (error) {
+          console.error('[Proposals.update] Update error:', error);
+          throw error;
+        }
 
-        const ownerName = requestOwnerData
-          ? `${requestOwnerData.first_name || ''} ${requestOwnerData.last_name || ''}`.trim() || requestOwnerData.email
-          : 'A client';
+        console.log('[Proposals.update] Update result:', updateResult);
 
-        const requestTitle = requestData.title || 'your request';
+        // Get the first result from the array
+        const updatedProposal = updateResult && updateResult.length > 0 ? updateResult[0] : proposal;
+        console.log('[Proposals.update] Returning updated proposal:', updatedProposal);
 
-        const statusMessages = {
-          accepted: `Your proposal for "${requestTitle}" was accepted by ${ownerName}! 🎉`,
-          rejected: `Your proposal for "${requestTitle}" was not selected.`,
-        };
+        // If status changed, notify the proposal submitter
+        if (updates.status && updates.status !== oldStatus && requestData) {
+          // Get request owner info for notification
+          let requestOwnerData = null;
+          try {
+            const result = await supabase
+              .from('users')
+              .select('first_name, last_name, email')
+              .eq('id', requestData.user_id)
+              .maybeSingle();
+            requestOwnerData = result.data;
+          } catch (err) {
+            console.warn('Failed to fetch request owner data:', err);
+          }
 
-        const message = statusMessages[updates.status] || `Your proposal status was updated to ${updates.status}`;
+          const ownerName = requestOwnerData
+            ? `${requestOwnerData.first_name || ''} ${requestOwnerData.last_name || ''}`.trim() || requestOwnerData.email
+            : 'A client';
 
-        // Create notification for proposal submitter
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: proposal.user_id,
-            title: updates.status === 'accepted' ? 'Proposal Accepted!' : 'Proposal Update',
-            message: message,
-            type: 'proposal',
-            related_id: proposalId,
-            read: false
-          });
+          const requestTitle = requestData.title || 'your request';
+
+          const statusMessages = {
+            accepted: `Your proposal for "${requestTitle}" was accepted by ${ownerName}! 🎉`,
+            rejected: `Your proposal for "${requestTitle}" was not selected.`,
+          };
+
+          const message = statusMessages[updates.status] || `Your proposal status was updated to ${updates.status}`;
+
+          // Create notification for proposal submitter
+          try {
+            await supabase
+              .from('notifications')
+              .insert({
+                user_id: proposal.user_id,
+                title: updates.status === 'accepted' ? 'Proposal Accepted!' : 'Proposal Update',
+                message: message,
+                type: 'proposal',
+                related_id: proposalId,
+                read: false
+              });
+          } catch (notifError) {
+            console.warn('Failed to create notification:', notifError);
+            // Don't throw - notification failure shouldn't fail the whole update
+          }
+        }
+
+        return updatedProposal;
+      } catch (err) {
+        console.error('Error updating proposal:', err);
+        throw err;
       }
-
-      return data;
     },
   },
 
@@ -540,37 +786,46 @@ export const db = {
 
     // Get all conversations for a user
     getUserConversations: async (userId) => {
+      // Fetch conversations without joins to avoid JSON coercion issues
       const { data, error } = await supabase
         .from('conversations')
-        .select('*, user1:users!conversations_user1_id_fkey(*), user2:users!conversations_user2_id_fkey(*), requests(*)')
+        .select('*')
         .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
         .order('last_message_at', { ascending: false });
       
       if (error) throw error;
+      if (!data || data.length === 0) return [];
       
-      // Fetch last message for each conversation
-      const conversationsWithMessages = await Promise.all(
+      // Fetch related data for each conversation
+      const conversationsWithData = await Promise.all(
         data.map(async (conv) => {
           try {
-            // Get the last message for this conversation
-            const { data: lastMessages } = await supabase
-              .from('messages')
-              .select('*, sender_id, content, created_at')
-              .eq('conversation_id', conv.id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
+            // Fetch user1, user2, request, and last message in parallel
+            const [user1Data, user2Data, requestData, lastMessage] = await Promise.all([
+              conv.user1_id ? supabase.from('users').select('*').eq('id', conv.user1_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              conv.user2_id ? supabase.from('users').select('*').eq('id', conv.user2_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              conv.request_id ? supabase.from('requests').select('*').eq('id', conv.request_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              supabase.from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(1).maybeSingle().then(r => r.data).catch(() => null)
+            ]);
             
             return {
               ...conv,
-              last_message: lastMessages?.content || null,
-              last_message_sender_id: lastMessages?.sender_id || null,
-              last_message_created_at: lastMessages?.created_at || null,
+              user1: user1Data,
+              user2: user2Data,
+              requests: requestData,
+              request: requestData,
+              last_message: lastMessage?.content || null,
+              last_message_sender_id: lastMessage?.sender_id || null,
+              last_message_created_at: lastMessage?.created_at || null,
             };
           } catch (err) {
-            console.error('Error fetching last message for conversation:', conv.id, err);
+            console.error('Error fetching data for conversation:', conv.id, err);
             return {
               ...conv,
+              user1: null,
+              user2: null,
+              requests: null,
+              request: null,
               last_message: null,
               last_message_sender_id: null,
               last_message_created_at: null,
@@ -579,7 +834,7 @@ export const db = {
         })
       );
       
-      return conversationsWithMessages;
+      return conversationsWithData;
     },
   },
 
@@ -587,32 +842,79 @@ export const db = {
   messages: {
     // Get messages for a conversation
     getConversation: async (conversationId) => {
+      // Fetch messages without joins to avoid JSON coercion issues
       const { data, error } = await supabase
         .from('messages')
-        .select('*, sender:users!messages_sender_id_fkey(*)')
+        .select('*')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
       
       if (error) throw error;
-      return data;
+      if (!data || data.length === 0) return [];
+      
+      // Fetch sender data separately for each message
+      const messagesWithSenders = await Promise.all(
+        data.map(async (message) => {
+          let senderData = null;
+          if (message.sender_id) {
+            try {
+              const { data: sender } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', message.sender_id)
+                .maybeSingle();
+              senderData = sender;
+            } catch (err) {
+              console.warn('Error fetching sender for message:', err);
+            }
+          }
+          return {
+            ...message,
+            sender: senderData
+          };
+        })
+      );
+      
+      return messagesWithSenders;
     },
 
     // Send a message
     send: async (messageData) => {
+      // Insert without join to avoid JSON coercion issues
       const { data, error } = await supabase
         .from('messages')
         .insert(messageData)
-        .select('*, sender:users!messages_sender_id_fkey(*)')
+        .select()
         .single();
       
       if (error) throw error;
+      
+      // Fetch sender data separately
+      let senderData = null;
+      if (data && data.sender_id) {
+        try {
+          const { data: sender } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', data.sender_id)
+            .maybeSingle();
+          senderData = sender;
+        } catch (err) {
+          console.warn('Error fetching sender data:', err);
+        }
+      }
+      
+      const messageWithSender = {
+        ...data,
+        sender: senderData
+      };
 
       // Get conversation to find the recipient
       const { data: conversation, error: convError } = await supabase
         .from('conversations')
         .select('user1_id, user2_id')
         .eq('id', messageData.conversation_id)
-        .single();
+        .maybeSingle();
 
       if (!convError && conversation) {
         // Determine the recipient (the other user in the conversation)
@@ -620,13 +922,7 @@ export const db = {
           ? conversation.user2_id 
           : conversation.user1_id;
 
-        // Get sender info for notification
-        const { data: senderData } = await supabase
-          .from('users')
-          .select('first_name, last_name, email')
-          .eq('id', messageData.sender_id)
-          .single();
-
+        // Use already fetched senderData for notification
         const senderName = senderData 
           ? `${senderData.first_name || ''} ${senderData.last_name || ''}`.trim() || senderData.email
           : 'Someone';
@@ -658,7 +954,7 @@ export const db = {
           .eq('id', messageData.conversation_id);
       }
       
-      return data;
+      return messageWithSender;
     },
 
     // Mark messages as read
@@ -745,6 +1041,370 @@ export const db = {
         .eq('id', notificationId);
       
       if (error) throw error;
+    },
+  },
+
+  // Payments table operations
+  payments: {
+    // Get payment by ID
+    getById: async (paymentId) => {
+      try {
+        // Fetch payment without relations to avoid JSON coercion issues
+        const { data: payment, error } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('id', paymentId)
+          .maybeSingle();
+        
+        if (error) throw error;
+        if (!payment) {
+          console.warn('Payment not found or not accessible:', paymentId);
+          return null;
+        }
+        
+        // Fetch related data separately
+        const [payer, payee, request, proposal] = await Promise.all([
+          payment.payer_id ? supabase.from('users').select('*').eq('id', payment.payer_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.payee_id ? supabase.from('users').select('*').eq('id', payment.payee_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.request_id ? supabase.from('requests').select('*').eq('id', payment.request_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.proposal_id ? supabase.from('proposals').select('*').eq('id', payment.proposal_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null)
+        ]);
+        
+        return {
+          ...payment,
+          payer,
+          payee,
+          request,
+          proposal
+        };
+      } catch (err) {
+        console.error('Error fetching payment:', err);
+        throw err;
+      }
+    },
+
+    // Get payment by proposal ID
+    getByProposal: async (proposalId) => {
+      // Fetch payment without joins to avoid JSON coercion issues
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('proposal_id', proposalId)
+        .maybeSingle();
+      
+      if (error) throw error;
+      if (!data) return null;
+      
+      // Fetch related data separately
+      try {
+        const [proposal, payer, payee, request] = await Promise.all([
+          data.proposal_id ? supabase.from('proposals').select('*').eq('id', data.proposal_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          data.payer_id ? supabase.from('users').select('*').eq('id', data.payer_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          data.payee_id ? supabase.from('users').select('*').eq('id', data.payee_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          data.request_id ? supabase.from('requests').select('*').eq('id', data.request_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null)
+        ]);
+        
+        return {
+          ...data,
+          proposal,
+          payer,
+          payee,
+          request
+        };
+      } catch (err) {
+        console.error('Error fetching payment related data:', err);
+        return data; // Return payment without related data if fetch fails
+      }
+    },
+
+    // Get payments for a user (as payer or payee)
+    getUserPayments: async (userId) => {
+      // Fetch payments without joins to avoid JSON coercion issues
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .or(`payer_id.eq.${userId},payee_id.eq.${userId}`)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
+      
+      // Fetch related data separately for each payment
+      const paymentsWithRelatedData = await Promise.all(
+        data.map(async (payment) => {
+          try {
+            const [proposal, payer, payee, request] = await Promise.all([
+              payment.proposal_id ? supabase.from('proposals').select('*').eq('id', payment.proposal_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              payment.payer_id ? supabase.from('users').select('*').eq('id', payment.payer_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              payment.payee_id ? supabase.from('users').select('*').eq('id', payment.payee_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+              payment.request_id ? supabase.from('requests').select('*').eq('id', payment.request_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null)
+            ]);
+            
+            return {
+              ...payment,
+              proposal,
+              payer,
+              payee,
+              request
+            };
+          } catch (err) {
+            console.warn('Error fetching related data for payment:', err);
+            return payment; // Return payment without related data if fetch fails
+          }
+        })
+      );
+      
+      return paymentsWithRelatedData;
+    },
+
+    // Create payment (calls database function or creates directly)
+    create: async (paymentData) => {
+      // Skip RPC and use direct insert to avoid JSON coercion issues
+      // The RPC function returns UUID scalar which causes parsing issues
+      return await db.payments.createDirect(paymentData);
+    },
+
+    // Direct payment creation (fallback when RPC doesn't exist)
+    createDirect: async (paymentData) => {
+      console.log('[Payment Create] Starting with data:', paymentData);
+      
+      // Create payment record directly - Don't use .single() to avoid coercion issues
+      const { data: paymentArray, error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          proposal_id: paymentData.proposal_id,
+          request_id: paymentData.request_id,
+          payer_id: paymentData.payer_id,
+          payee_id: paymentData.payee_id,
+          amount: paymentData.amount,
+          status: 'pending',
+          stripe_payment_intent_id: paymentData.stripe_payment_intent_id || null,
+          currency: 'USD'
+        })
+        .select();
+      
+      if (paymentError) {
+        console.error('[Payment Create] Insert error:', paymentError);
+        throw paymentError;
+      }
+      
+      // Get first payment from array
+      const payment = paymentArray && paymentArray.length > 0 ? paymentArray[0] : null;
+      if (!payment) {
+        throw new Error('Payment creation failed - no data returned');
+      }
+      
+      console.log('[Payment Create] Payment inserted:', payment.id);
+      
+      // Create initial transaction record
+      try {
+        await supabase
+          .from('transactions')
+          .insert({
+            payment_id: payment.id,
+            user_id: paymentData.payer_id,
+            type: 'payment',
+            amount: paymentData.amount,
+            status: 'pending',
+            description: 'Payment initiated for proposal',
+            currency: 'USD'
+          });
+        console.log('[Payment Create] Transaction created');
+      } catch (transactionError) {
+        console.warn('[Payment Create] Transaction creation failed (non-critical):', transactionError);
+        // Continue even if transaction creation fails
+      }
+      
+      // Update proposal with payment_id if possible
+      try {
+        await supabase
+          .from('proposals')
+          .update({ payment_id: payment.id })
+          .eq('id', paymentData.proposal_id);
+        console.log('[Payment Create] Proposal updated');
+      } catch (proposalError) {
+        console.warn('[Payment Create] Proposal update failed (non-critical):', proposalError);
+        // Continue even if proposal update fails
+      }
+      
+      // Return basic payment object - skip getById to avoid relation issues
+      console.log('[Payment Create] Returning payment:', payment);
+      return payment;
+    },
+
+    // Update payment status
+    update: async (paymentId, updates) => {
+      // Update without joins to avoid JSON coercion issues
+      const { data, error } = await supabase
+        .from('payments')
+        .update(updates)
+        .eq('id', paymentId)
+        .select();
+      
+      if (error) throw error;
+      const payment = data && data.length > 0 ? data[0] : null;
+      if (!payment) return null;
+      
+      // Fetch related data separately
+      try {
+        const [proposal, payer, payee, request] = await Promise.all([
+          payment.proposal_id ? supabase.from('proposals').select('*').eq('id', payment.proposal_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.payer_id ? supabase.from('users').select('*').eq('id', payment.payer_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.payee_id ? supabase.from('users').select('*').eq('id', payment.payee_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null),
+          payment.request_id ? supabase.from('requests').select('*').eq('id', payment.request_id).maybeSingle().then(r => r.data).catch(() => null) : Promise.resolve(null)
+        ]);
+        
+        return {
+          ...payment,
+          proposal,
+          payer,
+          payee,
+          request
+        };
+      } catch (err) {
+        console.error('Error fetching payment related data:', err);
+        return payment; // Return payment without related data if fetch fails
+      }
+    },
+
+    // Mark payment as paid (after Stripe confirmation)
+    markAsPaid: async (paymentId, stripeChargeId) => {
+      return await db.payments.update(paymentId, {
+        status: 'held',
+        stripe_charge_id: stripeChargeId
+      });
+    },
+
+    // Release escrow funds (calls database function)
+    releaseEscrow: async (paymentId, releasedBy) => {
+      const { data, error } = await supabase.rpc('release_escrow_funds', {
+        p_payment_id: paymentId,
+        p_released_by: releasedBy
+      });
+      
+      if (error) throw error;
+      
+      // Fetch updated payment
+      return await db.payments.getById(paymentId);
+    },
+  },
+
+  // Transactions table operations
+  transactions: {
+    // Get transactions for a payment
+    getByPayment: async (paymentId) => {
+      // Fetch transactions without joins to avoid JSON coercion issues
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('payment_id', paymentId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
+      
+      // Fetch user data separately for each transaction
+      const transactionsWithUsers = await Promise.all(
+        data.map(async (transaction) => {
+          let userData = null;
+          if (transaction.user_id) {
+            try {
+              const { data: user } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', transaction.user_id)
+                .maybeSingle();
+              userData = user;
+            } catch (err) {
+              console.warn('Error fetching user for transaction:', err);
+            }
+          }
+          return {
+            ...transaction,
+            users: userData,
+            user: userData
+          };
+        })
+      );
+      
+      return transactionsWithUsers;
+    },
+
+    // Get user transactions
+    getUserTransactions: async (userId) => {
+      // Fetch transactions without joins to avoid JSON coercion issues
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
+      
+      // Fetch payment data separately for each transaction
+      const transactionsWithPayments = await Promise.all(
+        data.map(async (transaction) => {
+          let paymentData = null;
+          if (transaction.payment_id) {
+            try {
+              const { data: payment } = await supabase
+                .from('payments')
+                .select('*')
+                .eq('id', transaction.payment_id)
+                .maybeSingle();
+              
+              // Fetch proposal for the payment if exists
+              let proposalData = null;
+              if (payment && payment.proposal_id) {
+                try {
+                  const { data: proposal } = await supabase
+                    .from('proposals')
+                    .select('*')
+                    .eq('id', payment.proposal_id)
+                    .maybeSingle();
+                  
+                  // Fetch request for the proposal if exists
+                  let requestData = null;
+                  if (proposal && proposal.request_id) {
+                    try {
+                      const { data: request } = await supabase
+                        .from('requests')
+                        .select('*')
+                        .eq('id', proposal.request_id)
+                        .maybeSingle();
+                      requestData = request;
+                    } catch (err) {
+                      console.warn('Error fetching request for proposal:', err);
+                    }
+                  }
+                  
+                  proposalData = {
+                    ...proposal,
+                    request: requestData
+                  };
+                } catch (err) {
+                  console.warn('Error fetching proposal for payment:', err);
+                }
+              }
+              
+              paymentData = {
+                ...payment,
+                proposal: proposalData
+              };
+            } catch (err) {
+              console.warn('Error fetching payment for transaction:', err);
+            }
+          }
+          return {
+            ...transaction,
+            payments: paymentData,
+            payment: paymentData
+          };
+        })
+      );
+      
+      return transactionsWithPayments;
     },
   },
 };
