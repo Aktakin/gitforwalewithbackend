@@ -932,30 +932,72 @@ const CreateRequestPage = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Upload any relevant files, documents, or reference materials
             </Typography>
-            <Button
-              variant="outlined"
-              startIcon={<CloudUpload />}
-              fullWidth
-              sx={{ 
-                height: 100, 
-                borderStyle: 'dashed',
-                borderColor: 'primary.main',
-                '&:hover': {
-                  borderColor: 'primary.dark',
-                  backgroundColor: 'primary.light',
-                  color: 'primary.dark'
+            <input
+              accept="image/*,.pdf,.doc,.docx"
+              style={{ display: 'none' }}
+              id="file-upload-input"
+              type="file"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length > 5) {
+                  setNotification({ open: true, message: 'Maximum 5 files allowed', severity: 'error' });
+                  return;
                 }
+                const validFiles = files.filter(file => {
+                  if (file.size > 10 * 1024 * 1024) {
+                    setNotification({ open: true, message: `${file.name} exceeds 10MB limit`, severity: 'error' });
+                    return false;
+                  }
+                  return true;
+                });
+                setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...validFiles] }));
               }}
-            >
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="subtitle1">
-                  Upload Reference Files
-                </Typography>
-                <Typography variant="caption" display="block">
-                  Documents, Images, Mockups • Max 5 files, 10MB each
-                </Typography>
+            />
+            <label htmlFor="file-upload-input">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<CloudUpload />}
+                fullWidth
+                sx={{ 
+                  height: 100, 
+                  borderStyle: 'dashed',
+                  borderColor: 'primary.main',
+                  '&:hover': {
+                    borderColor: 'primary.dark',
+                    backgroundColor: 'primary.light',
+                    color: 'primary.dark'
+                  }
+                }}
+              >
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="subtitle1">
+                    Upload Reference Files
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Documents, Images, Mockups • Max 5 files, 10MB each
+                  </Typography>
+                </Box>
+              </Button>
+            </label>
+            {formData.attachments.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                {formData.attachments.map((file, index) => (
+                  <Chip
+                    key={index}
+                    label={file.name || file}
+                    onDelete={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        attachments: prev.attachments.filter((_, i) => i !== index)
+                      }));
+                    }}
+                    sx={{ mr: 1, mb: 1 }}
+                  />
+                ))}
               </Box>
-            </Button>
+            )}
           </CardContent>
         </Card>
       </Grid>

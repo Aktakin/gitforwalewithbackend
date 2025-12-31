@@ -563,10 +563,18 @@ const Navbar = () => {
                   }
                   handleNotificationsClose();
                   // Navigate based on notification type
+                  // Don't navigate for budget change requests - they have action buttons
+                  if (notification.type === 'budget_change_request') {
+                    // Don't navigate - user should use approve/reject buttons
+                    return;
+                  }
+                  
                   if (notification.type === 'message' && notification.related_id) {
                     navigate('/messages');
                   } else if (notification.type === 'proposal' && notification.related_id) {
-                    navigate(`/requests/${notification.related_id}/proposal`);
+                    navigate(`/proposals`);
+                  } else if (notification.type === 'budget_change_approved' || notification.type === 'budget_change_rejected') {
+                    navigate('/proposals');
                   }
                 }}
                 sx={{

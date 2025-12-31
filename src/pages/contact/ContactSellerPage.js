@@ -290,14 +290,20 @@ const ContactSellerPage = () => {
   };
 
   const projectTypes = [
-    'Web Development',
-    'Mobile App Development',
-    'E-commerce Development',
-    'API Development',
-    'Database Design',
-    'UI/UX Design',
-    'Custom Software',
-    'Consultation',
+    'Woodworking & Carpentry',
+    'Pottery & Ceramics',
+    'Painting & Fine Arts',
+    'Jewelry Making',
+    'Textile & Fiber Arts',
+    'Metalworking & Blacksmithing',
+    'Glassblowing & Glasswork',
+    'Leatherworking',
+    'Stone Carving & Sculpture',
+    'Bookbinding & Paper Arts',
+    'Tailoring & Sewing',
+    'Furniture Making',
+    'Custom Artwork',
+    'Restoration & Repair',
     'Other'
   ];
 

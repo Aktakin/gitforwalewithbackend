@@ -66,7 +66,7 @@ import {
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocket } from '../../contexts/SimpleSocketContext';
-import { db } from '../../lib/supabase';
+import { db, supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 
 const NotificationsPage = () => {
@@ -105,7 +105,12 @@ const NotificationsPage = () => {
     sender: notif.sender || { name: 'System', id: 'system' },
     isRead: notif.read || false,
     timestamp: notif.timestamp,
-    data: { relatedId: notif.related_id }
+    related_id: notif.related_id, // Keep for backward compatibility
+    metadata: notif.metadata || null, // Include metadata directly
+    data: { 
+      relatedId: notif.related_id,
+      metadata: notif.metadata || null // Include metadata for budget change requests
+    }
   }));
 
   const notificationTypes = [
@@ -227,6 +232,15 @@ const NotificationsPage = () => {
   };
 
   const handleNotificationClick = (notification) => {
+    // Don't navigate if it's a budget change request (has action buttons)
+    if (notification.type === 'budget_change_request') {
+      // Just mark as read if unread, don't navigate
+      if (!notification.isRead) {
+        markAsRead([notification.id]);
+      }
+      return;
+    }
+
     // Mark as read if unread
     if (!notification.isRead) {
       markAsRead([notification.id]);
@@ -240,6 +254,14 @@ const NotificationsPage = () => {
       case 'proposal':
         // Navigate to proposals
         break;
+      case 'budget_change_approved':
+        // Navigate to proposals page (without request ID to avoid RLS issues)
+        window.location.href = `/proposals`;
+        break;
+      case 'budget_change_rejected':
+        // Navigate to proposals page (without request ID to avoid RLS issues)
+        window.location.href = `/proposals`;
+        break;
       case 'review':
         // Navigate to reviews
         break;
@@ -248,6 +270,96 @@ const NotificationsPage = () => {
         break;
       default:
         break;
+    }
+  };
+
+  const handleBudgetChangeApproval = async (notification, approved) => {
+    try {
+      // Get metadata from notification - try multiple locations
+      const metadata = notification.data?.metadata || notification.metadata || {};
+      console.log('Notification metadata:', metadata);
+      console.log('Full notification:', notification);
+      
+      // Try to get proposal ID from multiple sources
+      const proposalId = metadata.proposal_id || notification.data?.relatedId || notification.related_id;
+      let requestId = metadata.request_id;
+      
+      if (!proposalId) {
+        alert('Error: Missing proposal information. Please try refreshing the page.');
+        console.error('Missing proposal ID. Notification:', notification);
+        return;
+      }
+
+      // Get proposal to find artisan and client IDs
+      let proposal;
+      try {
+        proposal = await db.proposals.getById(proposalId);
+      } catch (err) {
+        console.error('Error fetching proposal:', err);
+        alert('Error: Unable to fetch proposal details. Please try again later.');
+        return;
+      }
+
+      if (!proposal) {
+        alert('Error: Proposal not found. It may have been deleted.');
+        return;
+      }
+
+      // Get request ID - use from metadata or proposal
+      if (!requestId) {
+        requestId = proposal.request_id;
+      }
+      
+      // If still no request ID, fetch it from proposal
+      if (!requestId) {
+        const { data: proposalData } = await supabase
+          .from('proposals')
+          .select('request_id')
+          .eq('id', proposalId)
+          .maybeSingle();
+        requestId = proposalData?.request_id;
+      }
+
+      if (!requestId) {
+        alert('Error: Missing request information. Please contact support.');
+        return;
+      }
+
+      // Get client ID from request
+      let clientId = proposal.request?.user_id;
+      if (!clientId) {
+        const { data: requestData } = await supabase
+          .from('requests')
+          .select('user_id')
+          .eq('id', requestId)
+          .maybeSingle();
+        clientId = requestData?.user_id || user.id;
+      }
+
+      // Respond to budget change
+      await db.proposals.respondToBudgetChange({
+        proposalId: proposalId,
+        approved: approved,
+        artisanId: proposal.user_id,
+        clientId: clientId,
+        requestId: requestId
+      });
+
+      // Mark notification as read
+      if (!notification.isRead) {
+        markAsRead([notification.id]);
+      }
+
+      alert(approved 
+        ? 'Budget change approved! The client has been notified and can proceed with payment.'
+        : 'Budget change rejected. The client has been notified.'
+      );
+
+      // Refresh notifications
+      refreshNotifications();
+    } catch (error) {
+      console.error('Error handling budget change approval:', error);
+      alert(`Failed to ${approved ? 'approve' : 'reject'} budget change: ${error.message}`);
     }
   };
 
@@ -266,12 +378,22 @@ const NotificationsPage = () => {
           mb: 1,
           border: '1px solid',
           borderColor: notification.isRead ? 'divider' : 'primary.light',
-          cursor: 'pointer',
+          cursor: notification.type === 'budget_change_request' ? 'default' : 'pointer',
           '&:hover': {
             bgcolor: 'action.selected'
           }
         }}
-        onClick={() => handleNotificationClick(notification)}
+        onClick={() => {
+          // Don't navigate for budget change requests - buttons handle actions
+          if (notification.type === 'budget_change_request') {
+            // Just mark as read if unread
+            if (!notification.isRead) {
+              markAsRead([notification.id]);
+            }
+            return;
+          }
+          handleNotificationClick(notification);
+        }}
       >
         <Checkbox
           checked={selectedNotifications.includes(notification.id)}
@@ -339,16 +461,43 @@ const NotificationsPage = () => {
           }
         />
         <ListItemSecondaryAction>
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedNotificationId(notification.id);
-              setMoreMenuAnchorEl(e.currentTarget);
-            }}
-          >
-            <MoreVert />
-          </IconButton>
+          {notification.type === 'budget_change_request' ? (
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBudgetChangeApproval(notification, true);
+                }}
+              >
+                Approve
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBudgetChangeApproval(notification, false);
+                }}
+              >
+                Reject
+              </Button>
+            </Box>
+          ) : (
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedNotificationId(notification.id);
+                setMoreMenuAnchorEl(e.currentTarget);
+              }}
+            >
+              <MoreVert />
+            </IconButton>
+          )}
         </ListItemSecondaryAction>
       </ListItem>
     </motion.div>

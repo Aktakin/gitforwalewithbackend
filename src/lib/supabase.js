@@ -747,6 +747,248 @@ export const db = {
         throw err;
       }
     },
+
+    // Get proposal by ID
+    getById: async (proposalId) => {
+      try {
+        const { data: proposal, error } = await supabase
+          .from('proposals')
+          .select('*')
+          .eq('id', proposalId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!proposal) return null;
+
+        // Fetch related data separately
+        const [userData, requestData] = await Promise.all([
+          proposal.user_id ? supabase
+            .from('users')
+            .select('*')
+            .eq('id', proposal.user_id)
+            .maybeSingle()
+            .then(r => r.data)
+            .catch(() => null) : Promise.resolve(null),
+          proposal.request_id ? supabase
+            .from('requests')
+            .select('*')
+            .eq('id', proposal.request_id)
+            .maybeSingle()
+            .then(r => r.data)
+            .catch(() => null) : Promise.resolve(null)
+        ]);
+
+        return {
+          ...proposal,
+          user: userData,
+          request: requestData
+        };
+      } catch (err) {
+        console.error('Error fetching proposal by ID:', err);
+        throw err;
+      }
+    },
+
+    // Request budget change approval from artisan
+    requestBudgetChange: async ({ proposalId, newAmount, originalAmount, message, requestId, artisanId, clientId }) => {
+      try {
+        // Get proposal data
+        const { data: proposal, error: proposalError } = await supabase
+          .from('proposals')
+          .select('*')
+          .eq('id', proposalId)
+          .maybeSingle();
+
+        if (proposalError) throw proposalError;
+        if (!proposal) throw new Error('Proposal not found');
+
+        // Get request data
+        const { data: requestData } = await supabase
+          .from('requests')
+          .select('title')
+          .eq('id', requestId)
+          .maybeSingle();
+
+        // Get client data for notification
+        const { data: clientData } = await supabase
+          .from('users')
+          .select('first_name, last_name, email')
+          .eq('id', clientId)
+          .maybeSingle();
+
+        const clientName = clientData
+          ? `${clientData.first_name || ''} ${clientData.last_name || ''}`.trim() || clientData.email
+          : 'A client';
+
+        const requestTitle = requestData?.title || 'your request';
+
+        // Store budget change request in proposal metadata
+        const metadata = proposal.metadata || {};
+        metadata.budget_change_request = {
+          new_amount: newAmount,
+          original_amount: originalAmount,
+          message: message,
+          status: 'pending',
+          requested_at: new Date().toISOString(),
+          client_id: clientId
+        };
+
+        // Update proposal with metadata
+        await supabase
+          .from('proposals')
+          .update({ metadata: metadata })
+          .eq('id', proposalId);
+
+        // Create notification for artisan
+        const { data: notificationData, error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: artisanId,
+            title: 'Budget Change Request',
+            message: `${clientName} requested a budget change for "${requestTitle}" from $${originalAmount.toLocaleString()} to $${newAmount.toLocaleString()}. Please review and approve or reject.`,
+            type: 'budget_change_request',
+            related_id: proposalId,
+            metadata: {
+              proposal_id: proposalId,
+              request_id: requestId,
+              new_amount: newAmount,
+              original_amount: originalAmount,
+              message: message,
+              action: 'approve_reject'
+            },
+            read: false
+          })
+          .select()
+          .single();
+
+        if (notifError) {
+          console.error('Error creating budget change notification:', notifError);
+          // Don't throw - notification failure shouldn't fail the whole request
+          // But log it so we can debug
+        } else {
+          console.log('Budget change notification created successfully:', notificationData);
+        }
+
+        return { success: true };
+      } catch (err) {
+        console.error('Error requesting budget change:', err);
+        throw err;
+      }
+    },
+
+    // Approve or reject budget change
+    respondToBudgetChange: async ({ proposalId, approved, artisanId, clientId, requestId }) => {
+      try {
+        // Get proposal data
+        const { data: proposal, error: proposalError } = await supabase
+          .from('proposals')
+          .select('*')
+          .eq('id', proposalId)
+          .maybeSingle();
+
+        if (proposalError) throw proposalError;
+        if (!proposal) throw new Error('Proposal not found');
+
+        const metadata = proposal.metadata || {};
+        const budgetChangeRequest = metadata.budget_change_request;
+
+        if (!budgetChangeRequest || budgetChangeRequest.status !== 'pending') {
+          throw new Error('No pending budget change request found');
+        }
+
+        // Get request and artisan data for notifications
+        const { data: requestData } = await supabase
+          .from('requests')
+          .select('title')
+          .eq('id', requestId)
+          .maybeSingle();
+
+        const { data: artisanData } = await supabase
+          .from('users')
+          .select('first_name, last_name, email')
+          .eq('id', artisanId)
+          .maybeSingle();
+
+        const artisanName = artisanData
+          ? `${artisanData.first_name || ''} ${artisanData.last_name || ''}`.trim() || artisanData.email
+          : 'The artisan';
+
+        const requestTitle = requestData?.title || 'your request';
+
+        if (approved) {
+          // Update proposal with new price
+          await supabase
+            .from('proposals')
+            .update({
+              proposed_price: budgetChangeRequest.new_amount,
+              metadata: {
+                ...metadata,
+                budget_change_request: {
+                  ...budgetChangeRequest,
+                  status: 'approved',
+                  approved_at: new Date().toISOString()
+                }
+              }
+            })
+            .eq('id', proposalId);
+
+          // Create notification for client
+          await supabase
+            .from('notifications')
+            .insert({
+              user_id: clientId,
+              title: 'Budget Change Approved',
+              message: `${artisanName} approved your budget change request for "${requestTitle}". You can now proceed with payment.`,
+              type: 'budget_change_approved',
+              related_id: proposalId,
+              metadata: {
+                proposal_id: proposalId,
+                request_id: requestId,
+                new_amount: budgetChangeRequest.new_amount,
+                action: 'proceed_to_payment'
+              },
+              read: false
+            });
+        } else {
+          // Mark as rejected
+          await supabase
+            .from('proposals')
+            .update({
+              metadata: {
+                ...metadata,
+                budget_change_request: {
+                  ...budgetChangeRequest,
+                  status: 'rejected',
+                  rejected_at: new Date().toISOString()
+                }
+              }
+            })
+            .eq('id', proposalId);
+
+          // Create notification for client
+          await supabase
+            .from('notifications')
+            .insert({
+              user_id: clientId,
+              title: 'Budget Change Rejected',
+              message: `${artisanName} rejected your budget change request for "${requestTitle}". The original proposal amount remains.`,
+              type: 'budget_change_rejected',
+              related_id: proposalId,
+              metadata: {
+                proposal_id: proposalId,
+                request_id: requestId,
+                action: 'view_proposal'
+              },
+              read: false
+            });
+        }
+
+        return { success: true, approved };
+      } catch (err) {
+        console.error('Error responding to budget change:', err);
+        throw err;
+      }
+    },
   },
 
   // Conversations table operations

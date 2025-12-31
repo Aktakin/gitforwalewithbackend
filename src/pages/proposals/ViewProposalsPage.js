@@ -65,9 +65,13 @@ const ViewProposalsPage = () => {
   const [error, setError] = useState(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [proposalForPayment, setProposalForPayment] = useState(null);
+  const [budgetAdjustmentDialogOpen, setBudgetAdjustmentDialogOpen] = useState(false);
+  const [adjustedBudget, setAdjustedBudget] = useState(0);
+  const [budgetAdjustmentMessage, setBudgetAdjustmentMessage] = useState('');
 
   const requestId = searchParams.get('request');
   const proposalId = searchParams.get('proposal');
+  const [pendingBudgetChange, setPendingBudgetChange] = useState(null);
 
   // Fetch proposals from database
   useEffect(() => {
@@ -86,7 +90,41 @@ const ViewProposalsPage = () => {
         if (requestId) {
           // Fetch proposals for a specific request
           console.log('Fetching proposals for request:', requestId);
-          dbProposals = await db.proposals.getByRequest(requestId);
+          try {
+            dbProposals = await db.proposals.getByRequest(requestId);
+            // If no proposals found, it might be an RLS issue - fall back to all proposals
+            if (!dbProposals || dbProposals.length === 0) {
+              console.warn('No proposals found for request, fetching all user proposals instead');
+              const userRequests = await db.requests.getAll({ userId: user.id });
+              const allProposals = [];
+              for (const request of userRequests) {
+                try {
+                  const requestProposals = await db.proposals.getByRequest(request.id);
+                  allProposals.push(...requestProposals);
+                } catch (reqErr) {
+                  console.warn('Error fetching proposals for request:', request.id, reqErr);
+                }
+              }
+              dbProposals = allProposals;
+            }
+          } catch (err) {
+            console.error('Error fetching proposals for request:', err);
+            // If we can't fetch by request, try fetching all user proposals
+            console.log('Falling back to fetching all user proposals');
+            const userRequests = await db.requests.getAll({ userId: user.id });
+            const allProposals = [];
+            for (const request of userRequests) {
+              try {
+                const requestProposals = await db.proposals.getByRequest(request.id);
+                allProposals.push(...requestProposals);
+              } catch (reqErr) {
+                console.warn('Error fetching proposals for request:', request.id, reqErr);
+              }
+            }
+            dbProposals = allProposals;
+            // Don't show error - just show all proposals instead
+            console.log('Showing all proposals instead of request-specific proposals');
+          }
         } else {
           // Fetch all proposals for user's requests
           // First, get all user's requests
@@ -121,8 +159,21 @@ const ViewProposalsPage = () => {
             },
             proposal: {
               description: proposal.message || 'No message provided',
-              price: proposal.proposedPrice || 0,
+              price: (() => {
+                // Check for approved budget change
+                const metadata = proposal.metadata || {};
+                const budgetChange = metadata.budget_change_request;
+                return budgetChange && budgetChange.status === 'approved' 
+                  ? budgetChange.new_amount 
+                  : proposal.proposedPrice || 0;
+              })(),
+              originalPrice: proposal.proposedPrice || 0,
               timeline: proposal.estimatedDuration || 'Not specified',
+              budgetChangeApproved: (() => {
+                const metadata = proposal.metadata || {};
+                const budgetChange = metadata.budget_change_request;
+                return budgetChange && budgetChange.status === 'approved';
+              })(),
             },
             submittedAt: proposal.createdAt,
             status: proposal.status || 'pending',
@@ -158,8 +209,10 @@ const ViewProposalsPage = () => {
 
   const handleAcceptProposal = (proposal) => {
     setSelectedProposal(proposal);
-    setActionType('accept');
-    setActionDialogOpen(true);
+    // Use originalPrice if available, otherwise use current price
+    setAdjustedBudget(proposal.proposal.originalPrice || proposal.proposal.price);
+    setBudgetAdjustmentMessage('');
+    setBudgetAdjustmentDialogOpen(true);
   };
 
   const handleDeclineProposal = (proposal) => {
@@ -217,6 +270,7 @@ const ViewProposalsPage = () => {
           proposal: {
             description: proposal.message || 'No message provided',
             price: proposal.proposedPrice || 0,
+            originalPrice: proposal.proposedPrice || 0, // Store original price for budget change comparison
             timeline: proposal.estimatedDuration || 'Not specified',
           },
           submittedAt: proposal.createdAt,
@@ -229,10 +283,67 @@ const ViewProposalsPage = () => {
 
       console.log(`Successfully ${actionType}ed proposal:`, selectedProposal.id);
       setActionDialogOpen(false);
+      setBudgetAdjustmentDialogOpen(false);
       
-      // If accepting proposal, open payment modal immediately
+      // If accepting proposal, check if budget adjustment needs approval
       if (actionType === 'accept') {
-        setProposalForPayment(selectedProposal);
+        // Check if there's an approved budget change
+        const hasApprovedBudgetChange = selectedProposal.proposal.budgetChangeApproved;
+        
+        // Get the original price for comparison
+        const originalPrice = selectedProposal.proposal.originalPrice || selectedProposal.proposal.price;
+        
+        // If budget was adjusted and not yet approved, request approval from artisan
+        if (adjustedBudget !== originalPrice && !hasApprovedBudgetChange) {
+          console.log('Requesting budget change:', {
+            proposalId: selectedProposal.id,
+            newAmount: adjustedBudget,
+            originalAmount: originalPrice,
+            artisanId: selectedProposal.artisan.id,
+            requestId: selectedProposal.requestId
+          });
+          
+          try {
+            // Request budget change approval
+            const budgetChangeResult = await db.proposals.requestBudgetChange({
+              proposalId: selectedProposal.id,
+              newAmount: adjustedBudget,
+              originalAmount: originalPrice,
+              message: budgetAdjustmentMessage,
+              requestId: selectedProposal.requestId,
+              artisanId: selectedProposal.artisan.id,
+              clientId: user.id
+            });
+            
+            console.log('Budget change request result:', budgetChangeResult);
+            
+            // Show message to client
+            alert('Budget change request sent! Once the artisan approves the change, you will receive a notification and can proceed with payment. Check your notifications for updates.');
+            
+            // Don't open payment modal yet - wait for approval
+            setSelectedProposal(null);
+            setAdjustedBudget(0);
+            setBudgetAdjustmentMessage('');
+            return;
+          } catch (error) {
+            console.error('Error requesting budget change:', error);
+            alert(`Failed to send budget change request: ${error.message}`);
+            return;
+          }
+        }
+        
+        // If no budget change or budget change is approved, proceed to payment
+        const finalPrice = hasApprovedBudgetChange 
+          ? selectedProposal.proposal.price 
+          : adjustedBudget;
+        
+        setProposalForPayment({
+          ...selectedProposal,
+          proposal: {
+            ...selectedProposal.proposal,
+            price: finalPrice
+          }
+        });
         setPaymentModalOpen(true);
       } else {
         // For decline, just show success message
@@ -240,6 +351,8 @@ const ViewProposalsPage = () => {
       }
       
       setSelectedProposal(null);
+      setAdjustedBudget(0);
+      setBudgetAdjustmentMessage('');
     } catch (error) {
       console.error('Error updating proposal:', error);
       alert(`Failed to ${actionType} proposal: ${error.message}`);
@@ -528,6 +641,71 @@ const ViewProposalsPage = () => {
         )}
       </motion.div>
 
+      {/* Budget Adjustment Dialog */}
+      <Dialog
+        open={budgetAdjustmentDialogOpen}
+        onClose={() => {
+          setBudgetAdjustmentDialogOpen(false);
+          setSelectedProposal(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Adjust Budget Before Accepting
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Original proposal amount: <strong>${selectedProposal?.proposal.price.toLocaleString()}</strong>
+            <br />
+            You can adjust the budget below. The service provider will need to approve the change before payment can be made.
+            <br />
+            <strong>Once payment change is confirmed by artisan, payment can be made. Look at your notification for update.</strong>
+          </Alert>
+          
+          <TextField
+            fullWidth
+            label="Adjusted Budget Amount"
+            type="number"
+            value={adjustedBudget}
+            onChange={(e) => setAdjustedBudget(parseFloat(e.target.value) || 0)}
+            InputProps={{
+              startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>,
+            }}
+            sx={{ mb: 2 }}
+          />
+          
+          <TextField
+            fullWidth
+            label="Reason for Budget Adjustment (Optional)"
+            multiline
+            rows={3}
+            value={budgetAdjustmentMessage}
+            onChange={(e) => setBudgetAdjustmentMessage(e.target.value)}
+            placeholder="Explain why you're adjusting the budget..."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setBudgetAdjustmentDialogOpen(false);
+            setSelectedProposal(null);
+          }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => {
+              setBudgetAdjustmentDialogOpen(false);
+              setActionType('accept');
+              setActionDialogOpen(true);
+            }}
+          >
+            Continue to Accept
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Action Confirmation Dialog */}
       <Dialog
         open={actionDialogOpen}
@@ -541,7 +719,10 @@ const ViewProposalsPage = () => {
         <DialogContent>
           {actionType === 'accept' ? (
             <Alert severity="success" sx={{ mb: 2 }}>
-              You're about to accept this proposal from {selectedProposal?.artisan.name} for ${selectedProposal?.proposal.price.toLocaleString()}.
+              You're about to accept this proposal from {selectedProposal?.artisan.name} for ${adjustedBudget.toLocaleString()}.
+              {adjustedBudget !== selectedProposal?.proposal.price && (
+                <><br /><strong>Note:</strong> Budget adjusted from ${selectedProposal?.proposal.price.toLocaleString()}</>
+              )}
             </Alert>
           ) : (
             <Alert severity="warning" sx={{ mb: 2 }}>

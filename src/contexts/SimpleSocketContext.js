@@ -45,7 +45,8 @@ export const SocketProvider = ({ children }) => {
         read: notif.read || false,
         timestamp: new Date(notif.created_at),
         sender: { name: 'System' }, // Could be enhanced to fetch sender info
-        related_id: notif.related_id
+        related_id: notif.related_id,
+        metadata: notif.metadata || null // Include metadata for budget change requests
       }));
 
       setNotifications(transformedNotifications);

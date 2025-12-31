@@ -231,6 +231,13 @@ export const SupabaseAuthProvider = ({ children }) => {
           );
         }
         
+        // Check for email not verified error
+        if (authError.message?.includes('Email not confirmed') || 
+            authError.message?.includes('email_not_confirmed') ||
+            authError.message?.includes('Email not verified')) {
+          throw new Error('Email not verified. Please check your email and verify your account before signing in.');
+        }
+        
         // Handle specific Supabase auth errors
         if (authError.message.includes('Invalid login credentials') || 
             authError.message.includes('Invalid credentials') ||
@@ -239,6 +246,13 @@ export const SupabaseAuthProvider = ({ children }) => {
         }
         
         throw authError;
+      }
+      
+      // Check if email is verified after successful login
+      if (data.user && !data.user.email_confirmed_at) {
+        // Sign out the user if email is not verified
+        await supabase.auth.signOut();
+        throw new Error('Email not verified. Please check your email and verify your account before signing in.');
       }
 
       if (data.user) {

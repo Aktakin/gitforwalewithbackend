@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import {
   Box,
   Container,
@@ -53,6 +53,31 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { db } from '../../lib/supabase';
 import { transformUser, transformMessage, formatTimeAgo } from '../../utils/dataTransform';
 
+// Simple message input component - no memo to avoid focus issues
+const MessageInput = React.forwardRef(({ value, onChange, onKeyPress }, ref) => {
+  return (
+    <TextField
+      ref={ref}
+      fullWidth
+      multiline
+      maxRows={4}
+      placeholder="Type a message..."
+      value={value}
+      onChange={onChange}
+      onKeyPress={onKeyPress}
+      variant="outlined"
+      size="small"
+      sx={{
+        '& .MuiOutlinedInput-root': {
+          borderRadius: 3,
+        }
+      }}
+    />
+  );
+});
+
+MessageInput.displayName = 'MessageInput';
+
 const MessagesPage = () => {
   const { user, loading: authLoading } = useAuth();
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -65,6 +90,7 @@ const MessagesPage = () => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
+  const messageInputRef = useRef(null);
 
   // Fetch conversations from database
   useEffect(() => {
@@ -243,14 +269,16 @@ const MessagesPage = () => {
 
   // All data now comes from database - no mock data
 
-  const filteredConversations = conversations.filter(conv => {
-    if (!conv || !conv.participant) return false;
-    const name = conv.participant.name || '';
-    const project = conv.project || '';
-    if (!searchTerm.trim()) return true;
-    return name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           project.toLowerCase().includes(searchTerm.toLowerCase());
-  });
+  const filteredConversations = useMemo(() => {
+    return conversations.filter(conv => {
+      if (!conv || !conv.participant) return false;
+      const name = conv.participant.name || '';
+      const project = conv.project || '';
+      if (!searchTerm.trim()) return true;
+      return name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             project.toLowerCase().includes(searchTerm.toLowerCase());
+    });
+  }, [conversations, searchTerm]);
 
   // Debug logging
   useEffect(() => {
@@ -260,14 +288,32 @@ const MessagesPage = () => {
   }, [conversations, filteredConversations, searchTerm]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, selectedConversation]);
+    // Only scroll when conversation changes, not on every message update
+    if (selectedConversation) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedConversation]);
 
-  const handleSendMessage = async () => {
+  // Scroll to bottom when new message is added (but not on every render)
+  useEffect(() => {
+    if (messages.length > 0) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length]);
+
+  const handleSendMessage = useCallback(async () => {
     if (!newMessage.trim() || !selectedConversation?.id || !user?.id) return;
 
     try {
@@ -322,14 +368,37 @@ const MessagesPage = () => {
     } finally {
       setSending(false);
     }
-  };
+  }, [newMessage, selectedConversation, user]);
 
-  const handleKeyPress = (e) => {
+  const handleMessageChange = useCallback((e) => {
+    const newValue = e.target.value;
+    setNewMessage(newValue);
+    
+    // Preserve cursor position and focus
+    const input = e.target;
+    const cursorPosition = input.selectionStart;
+    
+    // Use requestAnimationFrame to ensure state update doesn't cause focus loss
+    requestAnimationFrame(() => {
+      if (messageInputRef.current) {
+        const textField = messageInputRef.current;
+        const inputElement = textField.querySelector('textarea') || textField.querySelector('input');
+        if (inputElement && document.activeElement !== inputElement) {
+          inputElement.focus();
+          if (inputElement.setSelectionRange && cursorPosition !== null) {
+            inputElement.setSelectionRange(cursorPosition, cursorPosition);
+          }
+        }
+      }
+    });
+  }, []);
+
+  const handleKeyPress = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
-  };
+  }, [handleSendMessage]);
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
@@ -642,21 +711,11 @@ const MessagesPage = () => {
             <IconButton size="small">
               <Image />
             </IconButton>
-            <TextField
-              fullWidth
-              multiline
-              maxRows={4}
-              placeholder="Type a message..."
+            <MessageInput
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleMessageChange}
               onKeyPress={handleKeyPress}
-              variant="outlined"
-              size="small"
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 3,
-                }
-              }}
+              inputRef={messageInputRef}
             />
             <IconButton size="small">
               <EmojiEmotions />
