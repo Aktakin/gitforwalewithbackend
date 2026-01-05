@@ -192,8 +192,8 @@ const ResetPasswordPage = () => {
               
               <Typography variant="body1" color="text.secondary">
                 {success 
-                  ? 'Your password has been reset successfully!'
-                  : 'Enter your new password below'
+                  ? 'Your password has been reset successfully! You can now log in with your new password.'
+                  : 'Enter your new password below. Make sure it\'s at least 6 characters long.'
                 }
               </Typography>
             </Box>

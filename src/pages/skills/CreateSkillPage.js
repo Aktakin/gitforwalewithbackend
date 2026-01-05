@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Paper,
@@ -21,6 +22,7 @@ import {
   Switch,
   FormControlLabel,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import { 
   Add, 
@@ -35,9 +37,15 @@ import {
   Language,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
+import { db } from '../../lib/supabase';
 
 const CreateSkillPage = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeStep, setActiveStep] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
   const [formData, setFormData] = useState({
     // Basic Info
     title: '',
@@ -158,10 +166,61 @@ const CreateSkillPage = () => {
     setActiveStep((prevActiveStep) => prevActiveStep - 1);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Skill data:', formData);
-    alert('🎉 Skill posted successfully! Your listing is now under review.');
+    
+    if (!user) {
+      alert('Please log in to create a skill listing');
+      navigate('/login');
+      return;
+    }
+
+    // Validate required fields
+    if (!formData.title || !formData.category || !formData.description) {
+      setSubmitError('Please fill in all required fields (Title, Category, Description)');
+      setActiveStep(0);
+      return;
+    }
+
+    setLoading(true);
+    setSubmitError(null);
+
+    try {
+      // Calculate hourly rate from packages (use average or minimum)
+      const prices = formData.packages
+        .map(pkg => parseFloat(pkg.price))
+        .filter(price => !isNaN(price) && price > 0);
+      
+      const hourlyRate = prices.length > 0 
+        ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 
+        : null;
+
+      // Prepare skill data for database
+      const skillData = {
+        user_id: user.id,
+        title: formData.title,
+        description: formData.description,
+        category: formData.category,
+        tags: formData.tags || [],
+        hourly_rate: hourlyRate,
+        is_active: true,  // Make it active immediately
+        is_public: true,  // Make it public immediately
+      };
+
+      // Save to database
+      const result = await db.skills.create(skillData);
+
+      if (result) {
+        // Success - redirect to skills page
+        alert('🎉 Skill posted successfully! Your listing is now live and available for clients to book.');
+        navigate('/skills');
+      }
+    } catch (error) {
+      console.error('Error creating skill:', error);
+      setSubmitError(error.message || 'Failed to create skill listing. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Step 1: Basic Information
@@ -532,10 +591,10 @@ const CreateSkillPage = () => {
       <Grid item xs={12}>
         <Alert severity="success" sx={{ borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom>
-            🎉 Almost ready to launch!
+            🎉 Your skill listing is live!
           </Typography>
           <Typography variant="body2">
-            Your skill listing will be reviewed within 24-48 hours. Once approved, clients can start finding and booking your services.
+            Your skill listing has been published instantly and is now available for clients to find and book your services.
           </Typography>
         </Alert>
       </Grid>
@@ -588,6 +647,12 @@ const CreateSkillPage = () => {
             ))}
           </Stepper>
 
+          {submitError && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {submitError}
+            </Alert>
+          )}
+
           <form onSubmit={handleSubmit}>
             {getStepContent(activeStep)}
 
@@ -596,14 +661,14 @@ const CreateSkillPage = () => {
             <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2 }}>
               <Button
                 color="inherit"
-                disabled={activeStep === 0}
+                disabled={activeStep === 0 || loading}
                 onClick={handleBack}
                 size="large"
               >
                 Back
               </Button>
               <Box sx={{ flex: '1 1 auto' }} />
-              <Button variant="outlined" size="large">
+              <Button variant="outlined" size="large" disabled={loading}>
                 Save as Draft
               </Button>
               {activeStep === steps.length - 1 ? (
@@ -611,12 +676,13 @@ const CreateSkillPage = () => {
                   variant="contained" 
                   onClick={handleSubmit}
                   size="large"
-                  startIcon={<CheckCircle />}
+                  disabled={loading}
+                  startIcon={loading ? <CircularProgress size={20} /> : <CheckCircle />}
                 >
-                  Launch My Skill
+                  {loading ? 'Publishing...' : 'Launch My Skill'}
                 </Button>
               ) : (
-                <Button variant="contained" onClick={handleNext} size="large">
+                <Button variant="contained" onClick={handleNext} size="large" disabled={loading}>
                   Next Step
                 </Button>
               )}

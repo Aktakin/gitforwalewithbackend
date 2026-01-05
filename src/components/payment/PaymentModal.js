@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Button,
-  TextField,
   Box,
   Typography,
   Alert,
@@ -14,21 +13,54 @@ import {
   List,
   ListItem,
   ListItemText,
-  Chip,
 } from '@mui/material';
 import {
   CreditCard,
   Lock,
   CheckCircle,
 } from '@mui/icons-material';
+import {
+  PaymentElement,
+  useStripe,
+  useElements,
+  Elements,
+} from '@stripe/react-stripe-js';
 import paymentService from '../../lib/paymentService';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
+import { loadStripe } from '@stripe/stripe-js';
+
+// Load Stripe instance for nested Elements
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '');
+
+/**
+ * Wrapper component for PaymentElement that receives clientSecret
+ * This component has access to stripe and elements from the nested Elements context
+ */
+const PaymentElementWrapper = ({ onPaymentReady }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  
+  // Notify parent when stripe and elements are ready
+  useEffect(() => {
+    if (stripe && elements && onPaymentReady) {
+      onPaymentReady({ stripe, elements });
+    }
+  }, [stripe, elements, onPaymentReady]);
+  
+  return (
+    <PaymentElement 
+      options={{
+        layout: 'tabs',
+      }}
+    />
+  );
+};
 
 /**
  * Payment Modal Component
  * 
  * Handles payment processing for proposals, bookings, etc.
- * Uses mock payment service (ready for Stripe integration)
+ * Uses Stripe Elements when Stripe is configured, otherwise uses mock payment
  */
 const PaymentModal = ({
   open,
@@ -41,19 +73,69 @@ const PaymentModal = ({
   onError,
 }) => {
   const { user } = useAuth();
+  const outerStripe = useStripe();
+  const outerElements = useElements();
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentId, setPaymentId] = useState(null);
   const [fees, setFees] = useState(null);
+  const [clientSecret, setClientSecret] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const [nestedStripe, setNestedStripe] = useState(null);
+  const [nestedElements, setNestedElements] = useState(null);
 
-  // Mock card details (in production, use Stripe Elements)
-  const [cardNumber, setCardNumber] = useState('4242424242424242');
-  const [expMonth, setExpMonth] = useState('12');
-  const [expYear, setExpYear] = useState('2025');
-  const [cvc, setCvc] = useState('123');
+  const isStripeEnabled = paymentService.provider === 'stripe' && outerStripe;
+
+  // Initialize payment when modal opens
+  useEffect(() => {
+    if (open && proposalId && user?.id && !paymentId && !clientSecret) {
+      initializePayment();
+    }
+  }, [open, proposalId, user?.id]);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setPaymentId(null);
+      setClientSecret(null);
+      setFees(null);
+      setError(null);
+      setSuccess(false);
+      setProcessing(false);
+      setNestedStripe(null);
+      setNestedElements(null);
+    }
+  }, [open]);
+
+  const initializePayment = async () => {
+    try {
+      setError(null);
+      const result = await paymentService.createProposalPayment(
+        proposalId,
+        user.id
+      );
+      setPaymentId(result.payment.id);
+      setFees(result.fees);
+      
+      // If using Stripe, set client secret from paymentIntent or payment metadata
+      if (result.paymentIntent?.clientSecret) {
+        setClientSecret(result.paymentIntent.clientSecret);
+      } else if (result.payment?.metadata?.clientSecret) {
+        setClientSecret(result.payment.metadata.clientSecret);
+      }
+    } catch (err) {
+      console.error('Error initializing payment:', err);
+      setError(err.message || 'Failed to initialize payment');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Prevent double submission
+    if (processing) {
+      return;
+    }
     
     if (!user?.id) {
       setError('Please log in to complete payment');
@@ -64,52 +146,12 @@ const PaymentModal = ({
     setError(null);
 
     try {
-      // Step 1: Create payment (or use existing paymentId)
-      let payment = null;
-      let paymentFees = null;
-
-      if (!paymentId && proposalId) {
-        const result = await paymentService.createProposalPayment(
-          proposalId,
-          user.id
-        );
-        payment = result.payment;
-        paymentFees = result.fees;
-        setPaymentId(payment.id);
-        setFees(paymentFees);
-      }
-
-      // Step 2: Add payment method (mock)
-      const paymentMethodResult = await paymentService.addPaymentMethod({
-        userId: user.id,
-        cardDetails: {
-          number: cardNumber,
-          exp_month: parseInt(expMonth),
-          exp_year: parseInt(expYear),
-          cvc: cvc,
-        },
-        billingAddress: {
-          line1: '123 Main St',
-          city: 'San Francisco',
-          state: 'CA',
-          postal_code: '94111',
-          country: 'US',
-        },
-      });
-
-      // Step 3: Process payment
-      const result = await paymentService.processPayment({
-        paymentId: payment?.id || paymentId,
-        paymentMethodId: paymentMethodResult.paymentMethod.provider_payment_method_id,
-      });
-
-      if (result.success) {
-        onSuccess && onSuccess(result);
-        setTimeout(() => {
-          onClose();
-        }, 2000);
+      if (isStripeEnabled) {
+        // Stripe payment flow
+        await handleStripePayment();
       } else {
-        throw new Error('Payment failed');
+        // Mock payment flow (fallback)
+        await handleMockPayment();
       }
     } catch (err) {
       console.error('Payment error:', err);
@@ -117,6 +159,100 @@ const PaymentModal = ({
       onError && onError(err);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleStripePayment = async () => {
+    // Use nested stripe and elements (from the Elements wrapper with clientSecret)
+    const stripe = nestedStripe;
+    const elements = nestedElements;
+    
+    if (!stripe || !elements || !clientSecret) {
+      throw new Error('Stripe not initialized. Please wait for payment form to load.');
+    }
+
+    // Submit payment element
+    const { error: submitError } = await elements.submit();
+    if (submitError) {
+      throw submitError;
+    }
+
+    // Confirm payment (this automatically confirms the PaymentIntent)
+    const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      clientSecret,
+      confirmParams: {
+        return_url: `${window.location.origin}/payment/success`,
+      },
+      redirect: 'if_required',
+    });
+
+    if (confirmError) {
+      // Check if error is because payment already succeeded
+      if (confirmError.message && confirmError.message.includes('already succeeded')) {
+        // Payment already succeeded, just update database
+        console.log('Payment already succeeded, updating database...');
+        try {
+          await paymentService.updatePaymentStatus({
+            paymentId,
+            status: 'succeeded',
+            paymentIntentId: paymentIntent?.id,
+          });
+          setSuccess(true);
+          onSuccess && onSuccess({ paymentIntent, paymentId });
+          setTimeout(() => {
+            onClose();
+          }, 2000);
+          return;
+        } catch (updateError) {
+          console.error('Error updating payment status:', updateError);
+          // Continue with normal error handling
+        }
+      }
+      throw confirmError;
+    }
+
+    if (paymentIntent.status === 'succeeded') {
+      // Payment succeeded - update database without trying to confirm again
+      try {
+        await paymentService.updatePaymentStatus({
+          paymentId,
+          status: 'succeeded',
+          paymentIntentId: paymentIntent.id,
+          paymentMethodId: paymentIntent.payment_method,
+          chargeId: paymentIntent.latest_charge,
+        });
+      } catch (updateError) {
+        console.error('Error updating payment in database:', updateError);
+        // Don't fail the payment if database update fails
+      }
+
+      setSuccess(true);
+      onSuccess && onSuccess({ paymentIntent, paymentId });
+      
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    } else {
+      throw new Error(`Payment status: ${paymentIntent.status}`);
+    }
+  };
+
+  const handleMockPayment = async () => {
+    // Mock payment flow (for testing without Stripe)
+    const result = await paymentService.processPayment({
+      paymentId,
+      paymentMethodId: 'pm_mock_' + Date.now(),
+    });
+
+    if (result.success) {
+      setSuccess(true);
+      onSuccess && onSuccess(result);
+      setTimeout(() => {
+        onClose();
+      }, 2000);
+    } else {
+      throw new Error('Payment failed');
     }
   };
 
@@ -193,67 +329,53 @@ const PaymentModal = ({
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Mock Card Form */}
+          {/* Payment Method */}
           <Box>
-            <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <CreditCard fontSize="small" />
               Payment Method
             </Typography>
             
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              🧪 Mock Payment Mode - No real charges will be made
-            </Alert>
-
-            <TextField
-              fullWidth
-              label="Card Number"
-              value={cardNumber}
-              onChange={(e) => setCardNumber(e.target.value)}
-              placeholder="4242 4242 4242 4242"
-              margin="normal"
-              required
-              disabled={processing}
-            />
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField
-                label="MM"
-                value={expMonth}
-                onChange={(e) => setExpMonth(e.target.value)}
-                placeholder="12"
-                margin="normal"
-                required
-                disabled={processing}
-                sx={{ width: '33%' }}
-              />
-              <TextField
-                label="YYYY"
-                value={expYear}
-                onChange={(e) => setExpYear(e.target.value)}
-                placeholder="2025"
-                margin="normal"
-                required
-                disabled={processing}
-                sx={{ width: '33%' }}
-              />
-              <TextField
-                label="CVC"
-                value={cvc}
-                onChange={(e) => setCvc(e.target.value)}
-                placeholder="123"
-                margin="normal"
-                required
-                disabled={processing}
-                sx={{ width: '33%' }}
-              />
-            </Box>
-
-            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Lock fontSize="small" color="action" />
-              <Typography variant="caption" color="text.secondary">
-                Your payment information is secure and encrypted
-              </Typography>
-            </Box>
+            {isStripeEnabled ? (
+              <>
+                {clientSecret ? (
+                  <Elements 
+                    stripe={stripePromise} 
+                    options={{
+                      clientSecret: clientSecret,
+                      appearance: {
+                        theme: 'stripe',
+                      },
+                    }}
+                  >
+                    <PaymentElementWrapper 
+                      onPaymentReady={({ stripe, elements }) => {
+                        setNestedStripe(stripe);
+                        setNestedElements(elements);
+                      }}
+                    />
+                  </Elements>
+                ) : (
+                  <Alert severity="info">
+                    Initializing payment...
+                  </Alert>
+                )}
+                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Lock fontSize="small" color="action" />
+                  <Typography variant="caption" color="text.secondary">
+                    Your payment information is secure and encrypted by Stripe
+                  </Typography>
+                </Box>
+              </>
+            ) : (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                🧪 Mock Payment Mode - Stripe not configured. No real charges will be made.
+                <br />
+                <Typography variant="caption">
+                  To enable real payments, set REACT_APP_STRIPE_PUBLISHABLE_KEY in your .env file
+                </Typography>
+              </Alert>
+            )}
           </Box>
 
           {/* Error Message */}
@@ -264,7 +386,7 @@ const PaymentModal = ({
           )}
 
           {/* Success Message */}
-          {processing === false && error === null && paymentId && (
+          {success && (
             <Alert 
               severity="success" 
               icon={<CheckCircle />}
@@ -286,7 +408,7 @@ const PaymentModal = ({
           <Button
             type="submit"
             variant="contained"
-            disabled={processing}
+            disabled={processing || !isStripeEnabled || !clientSecret || !nestedStripe || !nestedElements}
             startIcon={processing ? <CircularProgress size={20} /> : <Lock />}
             sx={{ minWidth: 120 }}
           >
@@ -299,5 +421,3 @@ const PaymentModal = ({
 };
 
 export default PaymentModal;
-
-

@@ -231,11 +231,62 @@ const ViewProposalsPage = () => {
     if (!selectedProposal) return;
 
     try {
-      const newStatus = actionType === 'accept' ? 'accepted' : 'rejected';
+      // For decline, update status immediately
+      if (actionType === 'decline') {
+        const newStatus = 'rejected';
+        console.log(`Updating proposal ${selectedProposal.id} to status: ${newStatus}`);
+        await db.proposals.update(selectedProposal.id, { status: newStatus });
+        
+        // Refetch proposals
+        let dbProposals = [];
+        if (requestId) {
+          dbProposals = await db.proposals.getByRequest(requestId);
+        } else {
+          const userRequests = await db.requests.getAll({ userId: user.id });
+          const allProposals = [];
+          for (const request of userRequests) {
+            const requestProposals = await db.proposals.getByRequest(request.id);
+            allProposals.push(...requestProposals);
+          }
+          dbProposals = allProposals;
+        }
+
+        const transformedProposals = dbProposals
+          .map(transformProposal)
+          .filter(p => p !== null)
+          .map(proposal => ({
+            id: proposal.id,
+            artisan: {
+              id: proposal.user?.id,
+              name: proposal.user?.name || 'Unknown User',
+              avatar: proposal.user?.avatar,
+              rating: 0,
+              reviews: 0,
+              isVerified: proposal.user?.isVerified || false,
+              location: proposal.user?.location?.city || 'Location not specified',
+            },
+            proposal: {
+              description: proposal.message || 'No message provided',
+              price: proposal.proposedPrice || 0,
+              originalPrice: proposal.proposedPrice || 0,
+              timeline: proposal.estimatedDuration || 'Not specified',
+            },
+            submittedAt: proposal.createdAt,
+            status: proposal.status || 'pending',
+            requestId: proposal.requestId,
+            request: proposal.request,
+          }));
+
+        setProposals(transformedProposals);
+        alert(`Proposal declined. The artisan has been notified.`);
+        setActionDialogOpen(false);
+        setSelectedProposal(null);
+        return;
+      }
       
-      console.log(`Updating proposal ${selectedProposal.id} to status: ${newStatus}`);
-      const updatedProposal = await db.proposals.update(selectedProposal.id, { status: newStatus });
-      console.log('Update result:', updatedProposal);
+      // For accept, DON'T update status yet - wait for payment
+      // Just proceed to payment flow
+      console.log(`Preparing to accept proposal ${selectedProposal.id} - waiting for payment`);
       
       // Refetch proposals to get the latest data from database
       let dbProposals = [];
@@ -768,9 +819,96 @@ const ViewProposalsPage = () => {
           proposalId={proposalForPayment.id}
           requestId={proposalForPayment.requestId}
           description={`Payment for "${proposalForPayment.request?.title || 'Service'}" - ${proposalForPayment.artisan.name}`}
-          onSuccess={(result) => {
+          onSuccess={async (result) => {
             console.log('Payment successful:', result);
-            alert(`Payment successful! $${proposalForPayment.proposal.price} has been placed in escrow. The artisan can now start working on your request.`);
+            
+            try {
+              // Update proposal status to accepted ONLY after payment succeeds
+              await db.proposals.update(proposalForPayment.id, { status: 'accepted' });
+              
+              // Reject all other proposals for this request
+              const requestId = proposalForPayment.requestId;
+              if (requestId) {
+                const { data: otherProposals } = await db.supabase
+                  .from('proposals')
+                  .select('id')
+                  .eq('request_id', requestId)
+                  .neq('id', proposalForPayment.id)
+                  .neq('status', 'rejected');
+                
+                if (otherProposals && otherProposals.length > 0) {
+                  await db.supabase
+                    .from('proposals')
+                    .update({ status: 'rejected' })
+                    .in('id', otherProposals.map(p => p.id));
+                }
+                
+                // Update request status to accepted
+                await db.supabase
+                  .from('requests')
+                  .update({ status: 'accepted' })
+                  .eq('id', requestId);
+              }
+              
+              // Refresh proposals list
+              let dbProposals = [];
+              if (requestId) {
+                dbProposals = await db.proposals.getByRequest(requestId);
+              } else {
+                const userRequests = await db.requests.getAll({ userId: user.id });
+                const allProposals = [];
+                for (const request of userRequests) {
+                  const requestProposals = await db.proposals.getByRequest(request.id);
+                  allProposals.push(...requestProposals);
+                }
+                dbProposals = allProposals;
+              }
+
+              const transformedProposals = dbProposals
+                .map(transformProposal)
+                .filter(p => p !== null)
+                .map(proposal => ({
+                  id: proposal.id,
+                  artisan: {
+                    id: proposal.user?.id,
+                    name: proposal.user?.name || 'Unknown User',
+                    avatar: proposal.user?.avatar,
+                    rating: 0,
+                    reviews: 0,
+                    isVerified: proposal.user?.isVerified || false,
+                    location: proposal.user?.location?.city || 'Location not specified',
+                  },
+                  proposal: {
+                    description: proposal.message || 'No message provided',
+                    price: (() => {
+                      const metadata = proposal.metadata || {};
+                      const budgetChange = metadata.budget_change_request;
+                      return budgetChange && budgetChange.status === 'approved' 
+                        ? budgetChange.new_amount 
+                        : proposal.proposedPrice || 0;
+                    })(),
+                    originalPrice: proposal.proposedPrice || 0,
+                    timeline: proposal.estimatedDuration || 'Not specified',
+                    budgetChangeApproved: (() => {
+                      const metadata = proposal.metadata || {};
+                      const budgetChange = metadata.budget_change_request;
+                      return budgetChange && budgetChange.status === 'approved';
+                    })(),
+                  },
+                  submittedAt: proposal.createdAt,
+                  status: proposal.status || 'pending',
+                  requestId: proposal.requestId,
+                  request: proposal.request,
+                }));
+
+              setProposals(transformedProposals);
+              
+              alert(`Payment successful! $${proposalForPayment.proposal.price} has been placed in escrow. The proposal is now accepted and the artisan can start working on your request.`);
+            } catch (error) {
+              console.error('Error updating proposal status after payment:', error);
+              alert(`Payment successful, but there was an error updating the proposal status. Please refresh the page.`);
+            }
+            
             setPaymentModalOpen(false);
             setProposalForPayment(null);
           }}

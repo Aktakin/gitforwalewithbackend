@@ -38,7 +38,6 @@ import {
 } from '@mui/icons-material';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import ThemeToggle from '../common/ThemeToggle';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { useAdmin } from '../../contexts/AdminContext';
 import { useSocket } from '../../contexts/SimpleSocketContext';
@@ -212,10 +211,6 @@ const Navbar = () => {
                 </ListItem>
               ))}
               
-              <ListItem>
-                <ThemeToggle variant="switch" />
-              </ListItem>
-              
               <ListItem button onClick={handleLogout}>
                 <ListItemIcon>
                   <ExitToApp />
@@ -228,9 +223,6 @@ const Navbar = () => {
         
         {!isAuthenticated && (
           <Box sx={{ borderTop: 1, borderColor: 'divider', mt: 1, pt: 1 }}>
-            <ListItem>
-              <ThemeToggle variant="switch" />
-            </ListItem>
             <ListItem 
               button 
               component={Link} 
@@ -387,9 +379,6 @@ const Navbar = () => {
             {/* Auth Section */}
             {isAuthenticated ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 1 } }}>
-                {/* Theme Toggle - hide on very small screens */}
-                {!isMobile && <ThemeToggle variant="icon" />}
-
                 {/* Notifications */}
                 <IconButton
                   color="inherit"
@@ -446,7 +435,6 @@ const Navbar = () => {
               </Box>
             ) : (
               <Box sx={{ display: 'flex', gap: { xs: 0.5, sm: 1 }, alignItems: 'center' }}>
-                {!isMobile && <ThemeToggle variant="icon" />}
                 <Button
                   component={Link}
                   to="/login"

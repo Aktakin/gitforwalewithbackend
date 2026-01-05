@@ -1649,6 +1649,8 @@ export const db = {
       return transactionsWithPayments;
     },
   },
+  // Expose supabase client for direct access
+  supabase,
 };
 
 export default supabase;

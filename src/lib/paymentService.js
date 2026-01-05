@@ -7,12 +7,23 @@
 
 import { db } from './supabase';
 import mockPaymentService from './mockPaymentService';
+import stripeService from './stripeService';
 
 class PaymentService {
   constructor() {
-    // Use mock service for now - replace with Stripe later
-    this.paymentProvider = mockPaymentService;
-    this.provider = 'mock';
+    // Use Stripe if keys are configured, otherwise fall back to mock
+    const hasStripeKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY && 
+                         process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY.startsWith('pk_');
+    
+    if (hasStripeKey) {
+      this.paymentProvider = stripeService;
+      this.provider = 'stripe';
+      console.log('✅ Using Stripe payment provider');
+    } else {
+      this.paymentProvider = mockPaymentService;
+      this.provider = 'mock';
+      console.warn('⚠️ Stripe not configured, using mock payment service');
+    }
   }
 
   /**
@@ -46,11 +57,14 @@ class PaymentService {
         },
       });
 
-      // Create payment record in database
+      // Get provider user ID from proposal
+      const providerUserId = proposal.user_id;
+
+      // Create payment record in database with escrow enabled
       const { data: payment, error: paymentError } = await db.supabase
         .from('payments')
         .insert({
-          user_id: userId,
+          user_id: userId, // Payer (client)
           request_id: proposal.request_id,
           proposal_id: proposalId,
           amount,
@@ -63,8 +77,10 @@ class PaymentService {
           platform_fee: fees.platformFee,
           processing_fee: fees.processingFee,
           net_amount: fees.netAmount,
+          is_escrow: true, // Enable escrow - funds held until completion
           metadata: {
             clientSecret: paymentIntent.clientSecret,
+            providerUserId: providerUserId, // Store provider ID for later transfer
           },
         })
         .select()
@@ -110,14 +126,15 @@ class PaymentService {
         paymentMethodId
       );
 
-      // Update payment record
+      // Update payment record - hold in escrow instead of succeeded
       const { data: updatedPayment, error: updateError } = await db.supabase
         .from('payments')
         .update({
-          status: 'succeeded',
+          status: payment.is_escrow ? 'held' : 'succeeded', // Hold in escrow if enabled
           paid_at: new Date().toISOString(),
           provider_transaction_id: result.charges?.data[0]?.id,
           provider_payment_method_id: paymentMethodId,
+          is_escrow: payment.is_escrow !== false, // Ensure escrow is set
           metadata: {
             ...payment.metadata,
             receipt_url: result.charges?.data[0]?.receipt_url,
@@ -161,6 +178,81 @@ class PaymentService {
         .eq('id', paymentId);
 
       console.error('Error processing payment:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update payment status (for when payment is already confirmed by Stripe)
+   */
+  async updatePaymentStatus({ paymentId, status, paymentIntentId, paymentMethodId, chargeId }) {
+    try {
+      // Get payment to check if escrow is enabled
+      const { data: paymentData } = await db.supabase
+        .from('payments')
+        .select('is_escrow')
+        .eq('id', paymentId)
+        .single();
+      
+      // If payment succeeded and escrow is enabled, hold in escrow instead
+      const finalStatus = (status === 'succeeded' && paymentData?.is_escrow) ? 'held' : status;
+      
+      const updateData = {
+        status: finalStatus,
+        paid_at: status === 'succeeded' ? new Date().toISOString() : null,
+      };
+
+      if (paymentIntentId) {
+        updateData.payment_intent_id = paymentIntentId;
+      }
+      if (paymentMethodId) {
+        updateData.provider_payment_method_id = paymentMethodId;
+      }
+      if (chargeId) {
+        updateData.provider_transaction_id = chargeId;
+      }
+
+      const { data: updatedPayment, error: updateError } = await db.supabase
+        .from('payments')
+        .update(updateData)
+        .eq('id', paymentId)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      // Create transaction record if payment succeeded or held in escrow
+      if (status === 'succeeded' || finalStatus === 'held') {
+        const { data: payment } = await db.supabase
+          .from('payments')
+          .select('user_id, amount, currency, payment_type')
+          .eq('id', paymentId)
+          .single();
+
+        if (payment) {
+          await db.supabase
+            .from('transactions')
+            .insert({
+              payment_id: paymentId,
+              user_id: payment.user_id,
+              type: 'payment',
+              amount: payment.amount,
+              currency: payment.currency,
+              status: finalStatus === 'held' ? 'held' : 'completed',
+              description: finalStatus === 'held' 
+                ? `Payment held in escrow for ${payment.payment_type}` 
+                : `Payment for ${payment.payment_type}`,
+              provider_transaction_id: chargeId,
+            });
+        }
+      }
+
+      return {
+        success: true,
+        payment: updatedPayment,
+      };
+    } catch (error) {
+      console.error('Error updating payment status:', error);
       throw error;
     }
   }
@@ -232,48 +324,112 @@ class PaymentService {
   }
 
   /**
-   * Release funds from escrow
+   * Release funds from escrow to provider via Stripe Transfer
    */
-  async releaseEscrow(paymentId, recipientUserId) {
+  async releaseEscrow(paymentId, releasedByUserId) {
     try {
       const { data: payment, error } = await db.supabase
         .from('payments')
-        .select('*')
+        .select(`
+          *,
+          proposals(
+            user_id,
+            users(stripe_account_id, stripe_customer_id)
+          )
+        `)
         .eq('id', paymentId)
         .single();
 
       if (error) throw error;
 
+      if (payment.status !== 'held') {
+        throw new Error(`Payment is not held in escrow. Current status: ${payment.status}`);
+      }
+
       if (!payment.is_escrow) {
         throw new Error('Payment is not held in escrow');
       }
 
-      // Update payment
+      // Get provider user ID from proposal
+      const providerUserId = payment.metadata?.providerUserId || 
+                            payment.proposals?.user_id;
+
+      if (!providerUserId) {
+        throw new Error('Provider user ID not found for this payment');
+      }
+
+      // Get provider's Stripe account ID (if they have connected account)
+      const providerStripeAccountId = payment.proposals?.users?.stripe_account_id;
+
+      // If using Stripe, transfer funds to provider
+      if (this.provider === 'stripe' && payment.payment_intent_id) {
+        try {
+          // Transfer funds to provider via Stripe
+          if (providerStripeAccountId) {
+            // Transfer to connected account
+            const transfer = await this.paymentProvider.createTransfer({
+              amount: payment.net_amount,
+              currency: payment.currency || 'usd',
+              destination: providerStripeAccountId,
+              description: `Payment release for proposal ${payment.proposal_id}`,
+              metadata: {
+                paymentId: paymentId,
+                proposalId: payment.proposal_id,
+                requestId: payment.request_id,
+              },
+            });
+
+            console.log('[PaymentService] Stripe transfer created:', transfer);
+          } else {
+            // Provider doesn't have connected account yet
+            // For now, just mark as released in database
+            // In production, you'd want to prompt provider to connect their account
+            console.warn('[PaymentService] Provider does not have Stripe account connected. Payment marked as released but no transfer made.');
+          }
+        } catch (transferError) {
+          console.error('[PaymentService] Error creating Stripe transfer:', transferError);
+          // Continue with database update even if transfer fails
+          // The payment will be marked as released, but transfer can be retried
+        }
+      }
+
+      // Update payment status to released
       await db.supabase
         .from('payments')
         .update({
+          status: 'released',
           escrow_released_at: new Date().toISOString(),
-          escrow_released_to: recipientUserId,
+          escrow_released_to: providerUserId,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', paymentId);
 
-      // Credit recipient's wallet
-      await this._creditWallet(recipientUserId, payment.net_amount);
+      // Credit recipient's wallet (if wallet system exists)
+      try {
+        await this._creditWallet(providerUserId, payment.net_amount);
+      } catch (walletError) {
+        console.warn('[PaymentService] Could not credit wallet:', walletError);
+        // Continue even if wallet credit fails
+      }
 
-      // Create transaction
+      // Create transaction record
       await db.supabase
         .from('transactions')
         .insert({
           payment_id: paymentId,
-          user_id: recipientUserId,
-          type: 'payout',
+          user_id: providerUserId,
+          type: 'escrow_release',
           amount: payment.net_amount,
-          currency: payment.currency,
+          currency: payment.currency || 'USD',
           status: 'completed',
-          description: 'Escrow release',
+          description: 'Escrow funds released to provider',
         });
 
-      return { success: true };
+      return { 
+        success: true,
+        message: 'Funds released successfully',
+        providerUserId,
+      };
     } catch (error) {
       console.error('Error releasing escrow:', error);
       throw error;
@@ -559,10 +715,19 @@ class PaymentService {
       .single();
 
     if (payment?.proposals?.user_id) {
+      // Get current wallet balance
+      const { data: wallet } = await db.supabase
+        .from('wallets')
+        .select('reserved_balance')
+        .eq('user_id', payment.proposals.user_id)
+        .single();
+
+      const newReservedBalance = (wallet?.reserved_balance || 0) + amount;
+
       await db.supabase
         .from('wallets')
         .update({
-          reserved_balance: db.supabase.raw('reserved_balance + ?', [amount]),
+          reserved_balance: newReservedBalance,
         })
         .eq('user_id', payment.proposals.user_id);
     }
@@ -572,14 +737,27 @@ class PaymentService {
    * Private helper: Credit wallet
    */
   async _creditWallet(userId, amount) {
-    await db.supabase
+    // Get current wallet balance
+    const { data: wallet } = await db.supabase
       .from('wallets')
-      .update({
-        balance: db.supabase.raw('balance + ?', [amount]),
-        reserved_balance: db.supabase.raw('GREATEST(reserved_balance - ?, 0)', [amount]),
-        total_earned: db.supabase.raw('total_earned + ?', [amount]),
-      })
-      .eq('user_id', userId);
+      .select('balance, reserved_balance, total_earned')
+      .eq('user_id', userId)
+      .single();
+
+    if (wallet) {
+      const newBalance = (wallet.balance || 0) + amount;
+      const newReservedBalance = Math.max((wallet.reserved_balance || 0) - amount, 0);
+      const newTotalEarned = (wallet.total_earned || 0) + amount;
+
+      await db.supabase
+        .from('wallets')
+        .update({
+          balance: newBalance,
+          reserved_balance: newReservedBalance,
+          total_earned: newTotalEarned,
+        })
+        .eq('user_id', userId);
+    }
   }
 
   /**

@@ -935,16 +935,6 @@ const SettingsPage = () => {
                 <Palette /> Appearance
               </Typography>
               <FormControl fullWidth>
-                <InputLabel>Theme</InputLabel>
-                <Select
-                  value={settings.preferences.theme}
-                  onChange={(e) => handleSettingsChange('preferences', 'theme', e.target.value)}
-                  label="Theme"
-                >
-                  <MenuItem value="light">Light</MenuItem>
-                  <MenuItem value="dark">Dark</MenuItem>
-                  <MenuItem value="system">System</MenuItem>
-                </Select>
               </FormControl>
             </CardContent>
           </Card>

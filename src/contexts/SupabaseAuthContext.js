@@ -308,7 +308,17 @@ export const SupabaseAuthProvider = ({ children }) => {
         },
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        // Provide user-friendly error messages
+        if (authError.message?.includes('already registered') || 
+            authError.message?.includes('User already registered') ||
+            authError.message?.includes('email address is already registered') ||
+            authError.message?.includes('already exists') ||
+            authError.code === '23505') {
+          throw new Error('This email address is already registered. Please use a different email or try logging in.');
+        }
+        throw authError;
+      }
 
       if (authData.user) {
         // Create user profile in database
@@ -342,7 +352,28 @@ export const SupabaseAuthProvider = ({ children }) => {
       return { success: false, error: 'Registration failed' };
     } catch (error) {
       console.error('Registration error:', error);
-      const errorMessage = error.message || 'Registration failed. Please try again.';
+      
+      // Provide specific error messages
+      let errorMessage = error.message || 'Registration failed. Please try again.';
+      
+      // Handle email already exists
+      if (error.message?.includes('already registered') || 
+          error.message?.includes('already exists') ||
+          error.message?.includes('email address is already registered') ||
+          error.code === '23505') {
+        errorMessage = 'This email address is already registered. Please use a different email or try logging in.';
+      }
+      
+      // Handle invalid email
+      if (error.message?.includes('Invalid email') || error.message?.includes('email format')) {
+        errorMessage = 'Please enter a valid email address.';
+      }
+      
+      // Handle weak password
+      if (error.message?.includes('Password')) {
+        errorMessage = 'Password is too weak. Please use a stronger password.';
+      }
+      
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
@@ -430,7 +461,10 @@ export const SupabaseAuthProvider = ({ children }) => {
 
       if (resetError) throw resetError;
 
-      return { success: true, message: 'Password reset email sent. Please check your inbox.' };
+      return { 
+        success: true, 
+        message: 'Password reset email sent! Please check your inbox and click the link to reset your password.' 
+      };
     } catch (error) {
       console.error('Password reset error:', error);
       const errorMessage = error.message || 'Failed to send reset email';

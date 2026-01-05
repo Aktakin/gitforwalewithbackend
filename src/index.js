@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { CssBaseline } from '@mui/material';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
 
 import App from './App';
 import CustomThemeProvider from './contexts/ThemeContext';
@@ -10,6 +12,9 @@ import { SocketProvider } from './contexts/SimpleSocketContext';
 import { AdminProvider } from './contexts/AdminContext';
 
 import './index.css';
+
+// Initialize Stripe
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '');
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
@@ -30,16 +35,18 @@ console.log('🚀 SkillBridge React app starting...');
 root.render(
   <React.StrictMode>
     <BrowserRouter>
-      <CustomThemeProvider>
-        <SupabaseAuthProvider>
-          <AdminProvider>
-            <SocketProvider>
-              <CssBaseline />
-              <App />
-            </SocketProvider>
-          </AdminProvider>
-        </SupabaseAuthProvider>
-      </CustomThemeProvider>
+      <Elements stripe={stripePromise}>
+        <CustomThemeProvider>
+          <SupabaseAuthProvider>
+            <AdminProvider>
+              <SocketProvider>
+                <CssBaseline />
+                <App />
+              </SocketProvider>
+            </AdminProvider>
+          </SupabaseAuthProvider>
+        </CustomThemeProvider>
+      </Elements>
     </BrowserRouter>
   </React.StrictMode>
 );

@@ -32,6 +32,11 @@ import {
   Tooltip,
   useTheme,
   alpha,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import {
   TrendingUp,
@@ -63,6 +68,7 @@ import {
   CalendarToday,
   ArrowUpward,
   ArrowDownward,
+  Cancel,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -97,6 +103,132 @@ const ProviderDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [earningsData, setEarningsData] = useState([]);
   const [activityTimeline, setActivityTimeline] = useState([]);
+  const [closeProjectDialogOpen, setCloseProjectDialogOpen] = useState(false);
+  const [closeProjectAction, setCloseProjectAction] = useState(null); // 'complete' or 'cancel'
+  const [closeProjectReason, setCloseProjectReason] = useState('');
+  const [selectedOrderForClose, setSelectedOrderForClose] = useState(null);
+
+  // Handle closing a project (complete or cancel)
+  const handleCloseProject = (order, action) => {
+    setSelectedOrderForClose(order);
+    setCloseProjectAction(action);
+    setCloseProjectDialogOpen(true);
+  };
+
+  const confirmCloseProject = async () => {
+    if (!selectedOrderForClose) return;
+
+    try {
+      const newStatus = closeProjectAction === 'complete' ? 'completed' : 'canceled';
+      
+      // Update request status
+      if (selectedOrderForClose.requestId) {
+        await db.supabase
+          .from('requests')
+          .update({ 
+            status: newStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', selectedOrderForClose.requestId);
+      }
+
+      // Update proposal status
+      // Note: If constraint doesn't allow 'completed', we'll keep proposal as 'accepted'
+      // and only update the request status to 'completed'
+      if (selectedOrderForClose.proposalId) {
+        if (newStatus === 'completed') {
+          // Try to set proposal to 'completed', but if it fails, keep it as 'accepted'
+          // The request status change is what matters for filtering
+          try {
+            console.log('[ProviderDashboard] Attempting to update proposal status to completed');
+            await db.proposals.update(selectedOrderForClose.proposalId, { 
+              status: 'completed'
+            });
+            console.log('[ProviderDashboard] Proposal status updated to completed');
+          } catch (proposalError) {
+            console.warn('[ProviderDashboard] Could not update proposal to completed, keeping as accepted:', proposalError.message);
+            // Don't throw - the request status update is more important
+            // The proposal will stay as 'accepted' but request will be 'completed'
+          }
+        } else {
+          // For canceled projects, set proposal to rejected
+          try {
+            await db.proposals.update(selectedOrderForClose.proposalId, { 
+              status: 'rejected'
+            });
+          } catch (proposalError) {
+            console.warn('[ProviderDashboard] Could not update proposal to rejected:', proposalError.message);
+          }
+        }
+      }
+
+      // Refresh dashboard data by refetching
+      // Fetch all proposals submitted by this user (provider)
+      const userProposals = await db.proposals.getUserProposals(user.id);
+      const transformedProposals = userProposals.map(transformProposal).filter(p => p !== null);
+
+      // Separate proposals by status
+      const acceptedProposals = transformedProposals.filter(p => p.status === 'accepted' || p.status === 'completed');
+      const pendingProposals = transformedProposals.filter(p => p.status === 'pending');
+      
+      // Map proposals to orders
+      const ordersWithRequests = acceptedProposals.map((proposal) => {
+        const dbRequest = proposal.request || (userProposals.find(p => p.id === proposal.id)?.requests);
+        const transformedRequest = dbRequest ? transformRequest(dbRequest) : null;
+        const client = transformedRequest?.user || transformedRequest?.customer;
+        
+        return {
+          id: `${proposal.id}-${proposal.requestId || 'order'}`,
+          proposalId: proposal.id,
+          requestId: proposal.requestId,
+          client: client?.name || 'Unknown Client',
+          clientId: client?.id,
+          clientAvatar: client?.avatar || client?.profilePicture,
+          service: transformedRequest?.title || 'Service',
+          status: transformedRequest?.status === 'completed' ? 'Completed' : 
+                 transformedRequest?.status === 'canceled' ? 'Canceled' :
+                 transformedRequest?.status === 'in_review' ? 'In Progress' : 
+                 transformedRequest?.status === 'open' ? 'In Progress' : 'In Progress',
+          amount: proposal.proposedPrice || 0,
+          deadline: transformedRequest?.deadline ? transformedRequest.deadline.toISOString().split('T')[0] : null,
+          progress: transformedRequest?.status === 'completed' ? 100 : 
+                   transformedRequest?.status === 'in_review' ? 75 : 
+                   transformedRequest?.status === 'open' ? 0 : 50,
+          category: transformedRequest?.category,
+          createdAt: proposal.createdAt,
+          request: transformedRequest
+        };
+      });
+
+      const validOrders = ordersWithRequests.filter(o => o !== null);
+      setRecentOrders(validOrders.slice(0, 10));
+      
+      // Update stats
+      const completedOrders = validOrders.filter(o => o.status === 'Completed').length;
+      const activeOrders = validOrders.filter(o => o.status === 'In Progress').length;
+      const totalEarnings = validOrders
+        .filter(o => o.status === 'Completed')
+        .reduce((sum, o) => sum + (o.amount || 0), 0);
+      
+      setProviderStats(prev => ({
+        ...prev,
+        completedOrders,
+        activeOrders,
+        totalEarnings,
+        thisMonthEarnings: totalEarnings // Simplified for now
+      }));
+      
+      setCloseProjectDialogOpen(false);
+      setSelectedOrderForClose(null);
+      setCloseProjectAction(null);
+      setCloseProjectReason('');
+      
+      alert(`Project ${closeProjectAction === 'complete' ? 'completed' : 'canceled'} successfully!`);
+    } catch (error) {
+      console.error('Error closing project:', error);
+      alert(`Failed to ${closeProjectAction} project: ${error.message}`);
+    }
+  };
 
   // Fetch provider dashboard data
   useEffect(() => {
@@ -111,7 +243,7 @@ const ProviderDashboard = () => {
         const transformedProposals = userProposals.map(transformProposal).filter(p => p !== null);
 
         // Separate proposals by status
-        const acceptedProposals = transformedProposals.filter(p => p.status === 'accepted');
+        const acceptedProposals = transformedProposals.filter(p => p.status === 'accepted' || p.status === 'completed');
         const pendingProposals = transformedProposals.filter(p => p.status === 'pending');
         
         // Map proposals to orders
@@ -121,7 +253,7 @@ const ProviderDashboard = () => {
           const client = transformedRequest?.user || transformedRequest?.customer;
           
           return {
-            id: proposal.id,
+            id: `${proposal.id}-${proposal.requestId || 'order'}`,
             proposalId: proposal.id,
             requestId: proposal.requestId,
             client: client?.name || 'Unknown Client',
@@ -129,8 +261,9 @@ const ProviderDashboard = () => {
             clientAvatar: client?.avatar || client?.profilePicture,
             service: transformedRequest?.title || 'Service',
             status: transformedRequest?.status === 'completed' ? 'Completed' : 
+                   transformedRequest?.status === 'canceled' ? 'Canceled' :
                    transformedRequest?.status === 'in_review' ? 'In Progress' : 
-                   transformedRequest?.status === 'open' ? 'Waiting' : 'In Progress',
+                   transformedRequest?.status === 'open' ? 'In Progress' : 'In Progress',
             amount: proposal.proposedPrice || 0,
             deadline: transformedRequest?.deadline ? transformedRequest.deadline.toISOString().split('T')[0] : null,
             progress: transformedRequest?.status === 'completed' ? 100 : 
@@ -152,8 +285,8 @@ const ProviderDashboard = () => {
         startOfWeek.setDate(now.getDate() - 7);
         const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         
-        const completedOrders = validOrders.filter(o => o.status === 'Completed');
-        const activeOrders = validOrders.filter(o => o.status === 'In Progress');
+        const completedOrders = validOrders.filter(o => o.status === 'Completed' || o.status === 'completed');
+        const activeOrders = validOrders.filter(o => o.status === 'In Progress' || o.status === 'in_progress' || o.status === 'Waiting');
         
         const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
         const thisMonthEarnings = completedOrders
@@ -290,7 +423,7 @@ const ProviderDashboard = () => {
           const skill = skillsMap.get(category);
           skill.orders += 1;
           
-          if (order.status === 'Completed') {
+          if (order.status === 'Completed' || order.status === 'completed') {
             skill.completedOrders += 1;
             skill.earnings += order.amount || 0;
             
@@ -321,23 +454,29 @@ const ProviderDashboard = () => {
           .slice(0, 5);
         setSkillsPerformance(skillsArray);
 
-        // Activity timeline
-        const timeline = [
-          ...validOrders.slice(0, 5).map(order => ({
-            id: order.id,
-            type: 'order',
-            message: `Order "${order.service}" ${order.status.toLowerCase()}`,
-            time: formatTimeAgo(order.createdAt),
-            icon: 'work'
-          })),
-          ...transformedProposals.slice(0, 3).map(proposal => ({
-            id: proposal.id,
+        // Activity timeline - ensure unique IDs
+        const orderActivities = validOrders.slice(0, 5).map((order, idx) => ({
+          id: `order-${order.id}-${idx}`,
+          type: 'order',
+          message: `Order "${order.service}" ${order.status.toLowerCase()}`,
+          time: formatTimeAgo(order.createdAt),
+          icon: 'work'
+        }));
+        
+        const proposalActivities = transformedProposals
+          .filter(p => !validOrders.some(o => o.proposalId === p.id)) // Avoid duplicates
+          .slice(0, 3)
+          .map((proposal, idx) => ({
+            id: `proposal-${proposal.id}-${idx}`,
             type: 'proposal',
             message: `Submitted proposal for "${proposal.request?.title || 'request'}"`,
             time: formatTimeAgo(proposal.createdAt),
             icon: 'send'
-          }))
-        ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 6);
+          }));
+        
+        const timeline = [...orderActivities, ...proposalActivities]
+          .sort((a, b) => new Date(b.time) - new Date(a.time))
+          .slice(0, 6);
         setActivityTimeline(timeline);
 
         // Real notifications
@@ -364,9 +503,13 @@ const ProviderDashboard = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'In Progress': return 'info';
-      case 'Completed': return 'success';
+      case 'In Progress':
+      case 'in_progress': return 'info';
+      case 'Completed':
+      case 'completed': return 'success';
       case 'Waiting': return 'warning';
+      case 'Canceled':
+      case 'canceled': return 'error';
       default: return 'default';
     }
   };
@@ -942,6 +1085,38 @@ const ProviderDashboard = () => {
                                     </IconButton>
                                   </Tooltip>
                                 )}
+                                {(order.status === 'In Progress' || order.status === 'Waiting') && (
+                                  <>
+                                    <Tooltip title="Mark as Completed">
+                                      <IconButton 
+                                        size="small" 
+                                        color="success"
+                                        onClick={() => handleCloseProject(order, 'complete')}
+                                        sx={{ 
+                                          '&:hover': { 
+                                            bgcolor: alpha(theme.palette.success.main, 0.1)
+                                          } 
+                                        }}
+                                      >
+                                        <CheckCircle fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Cancel Project">
+                                      <IconButton 
+                                        size="small" 
+                                        color="error"
+                                        onClick={() => handleCloseProject(order, 'cancel')}
+                                        sx={{ 
+                                          '&:hover': { 
+                                            bgcolor: alpha(theme.palette.error.main, 0.1)
+                                          } 
+                                        }}
+                                      >
+                                        <Cancel fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
                               </Stack>
                             </TableCell>
                           </motion.tr>
@@ -1291,6 +1466,68 @@ const ProviderDashboard = () => {
           </motion.div>
         </Grid>
       </Grid>
+
+      {/* Close Project Dialog */}
+      <Dialog 
+        open={closeProjectDialogOpen} 
+        onClose={() => {
+          setCloseProjectDialogOpen(false);
+          setCloseProjectReason('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {closeProjectAction === 'complete' ? 'Complete Project' : 'Cancel Project'}
+        </DialogTitle>
+        <DialogContent>
+          {selectedOrderForClose && (
+            <Box>
+              <Alert 
+                severity={closeProjectAction === 'complete' ? 'success' : 'warning'} 
+                sx={{ mb: 2 }}
+              >
+                {closeProjectAction === 'complete' 
+                  ? `Are you sure you want to mark "${selectedOrderForClose.service}" as completed?`
+                  : `Are you sure you want to cancel "${selectedOrderForClose.service}"? This action cannot be undone.`
+                }
+              </Alert>
+              
+              <TextField
+                fullWidth
+                label={closeProjectAction === 'complete' ? 'Completion Notes (Optional)' : 'Cancellation Reason (Optional)'}
+                multiline
+                rows={3}
+                value={closeProjectReason}
+                onChange={(e) => setCloseProjectReason(e.target.value)}
+                placeholder={
+                  closeProjectAction === 'complete' 
+                    ? 'Add any notes about the completed project...'
+                    : 'Please provide a reason for canceling this project...'
+                }
+                sx={{ mt: 2 }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setCloseProjectDialogOpen(false);
+              setCloseProjectReason('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            color={closeProjectAction === 'complete' ? 'success' : 'error'}
+            onClick={confirmCloseProject}
+          >
+            {closeProjectAction === 'complete' ? 'Mark as Completed' : 'Cancel Project'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

@@ -24,6 +24,7 @@ import {
   Divider,
   Switch,
   FormControlLabel,
+  CircularProgress,
 } from '@mui/material';
 import {
   Edit,
@@ -38,10 +39,13 @@ import {
   Work,
   School,
   Language,
+  CameraAlt,
+  CloudUpload,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/SupabaseAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 
 const ProfileEditPage = () => {
   const { user, updateProfile } = useAuth();
@@ -86,6 +90,12 @@ const ProfileEditPage = () => {
   const [newTag, setNewTag] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [cameraDialogOpen, setCameraDialogOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const fileInputRef = React.useRef(null);
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
 
   // Load user data on mount
   useEffect(() => {
@@ -180,6 +190,140 @@ const ProfileEditPage = () => {
     }));
   };
 
+  // Handle file upload
+  const handleFileSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type.startsWith('image/')) {
+        // Show preview
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPreviewImage(reader.result);
+        };
+        reader.readAsDataURL(file);
+        uploadImageToSupabase(file);
+      } else {
+        alert('Please select an image file');
+      }
+    }
+  };
+
+  // Handle camera capture
+  const startCamera = async () => {
+    setCameraDialogOpen(true);
+    // Camera will start when dialog is fully opened (see TransitionProps.onEntered)
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraDialogOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          setPreviewImage(URL.createObjectURL(blob));
+          uploadImageToSupabase(file);
+          stopCamera();
+        }
+      }, 'image/jpeg', 0.9);
+    }
+  };
+
+  // Upload image to Supabase Storage
+  const uploadImageToSupabase = async (file) => {
+    if (!user?.id) {
+      alert('Please log in to upload images');
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      // Create a unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const filePath = fileName; // Store directly in user folder, not in subfolder
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        // If bucket doesn't exist, try 'profile-pictures' bucket
+        if (uploadError.message.includes('Bucket not found')) {
+          const { data: altUploadData, error: altUploadError } = await supabase.storage
+            .from('profile-pictures')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (altUploadError) {
+            throw altUploadError;
+          }
+
+          // Get public URL
+          const { data: urlData } = supabase.storage
+            .from('profile-pictures')
+            .getPublicUrl(filePath);
+
+          if (urlData?.publicUrl) {
+            setFormData(prev => ({ ...prev, profilePicture: urlData.publicUrl }));
+            setSuccessMessage('Profile picture uploaded successfully!');
+          }
+        } else {
+          throw uploadError;
+        }
+      } else {
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+
+        if (urlData?.publicUrl) {
+          setFormData(prev => ({ ...prev, profilePicture: urlData.publicUrl }));
+          setSuccessMessage('Profile picture uploaded successfully!');
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      if (error.message.includes('Bucket not found')) {
+        alert(
+          'Storage bucket not found!\n\n' +
+          'Please create a storage bucket in Supabase:\n' +
+          '1. Go to Supabase Dashboard → Storage\n' +
+          '2. Click "New bucket"\n' +
+          '3. Name it "avatars" (or "profile-pictures")\n' +
+          '4. Make it PUBLIC\n' +
+          '5. Click "Create bucket"\n\n' +
+          'See SETUP_PROFILE_PICTURES.md for detailed instructions.'
+        );
+      } else {
+        alert(`Failed to upload image: ${error.message}`);
+      }
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handleSave = async () => {
     setLoading(true);
     try {
@@ -231,20 +375,65 @@ const ProfileEditPage = () => {
             {/* Profile Picture */}
             <Grid item xs={12} md={3}>
               <Box sx={{ textAlign: 'center' }}>
-                <Avatar
-                  src={formData.profilePicture}
-                  sx={{ width: 150, height: 150, mx: 'auto', mb: 2 }}
-                >
-                  {formData.firstName?.[0]}{formData.lastName?.[0]}
-                </Avatar>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Profile Picture URL"
-                  value={formData.profilePicture}
-                  onChange={(e) => handleInputChange('profilePicture', e.target.value)}
-                  placeholder="https://example.com/photo.jpg"
-                />
+                <Box sx={{ position: 'relative', display: 'inline-block', mb: 2 }}>
+                  <Avatar
+                    src={previewImage || formData.profilePicture}
+                    sx={{ width: 150, height: 150, mx: 'auto' }}
+                  >
+                    {formData.firstName?.[0]}{formData.lastName?.[0]}
+                  </Avatar>
+                  {uploadingImage && (
+                    <CircularProgress
+                      size={40}
+                      sx={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                    />
+                  )}
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<CloudUpload />}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    fullWidth
+                    size="small"
+                  >
+                    Upload Photo
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<CameraAlt />}
+                    onClick={startCamera}
+                    disabled={uploadingImage}
+                    fullWidth
+                    size="small"
+                  >
+                    Take Photo
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                  />
+                </Box>
+                {formData.profilePicture && (
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Profile Picture URL"
+                    value={formData.profilePicture}
+                    onChange={(e) => handleInputChange('profilePicture', e.target.value)}
+                    placeholder="https://example.com/photo.jpg"
+                    sx={{ mt: 1 }}
+                  />
+                )}
               </Box>
             </Grid>
 
@@ -592,6 +781,90 @@ const ProfileEditPage = () => {
         <DialogActions>
           <Button onClick={() => setSkillDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleAddSkill} variant="contained">Add Skill</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Camera Dialog */}
+      <Dialog 
+        open={cameraDialogOpen} 
+        onClose={stopCamera}
+        maxWidth="sm"
+        fullWidth
+        TransitionProps={{ onEntered: () => {
+          // Start camera when dialog is fully opened
+          if (cameraDialogOpen && !streamRef.current) {
+            navigator.mediaDevices.getUserMedia({ 
+              video: { 
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              } 
+            }).then(stream => {
+              streamRef.current = stream;
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.play().catch(err => {
+                  console.error('Error playing video:', err);
+                });
+              }
+            }).catch(error => {
+              console.error('Error accessing camera:', error);
+              alert('Could not access camera. Please check permissions.');
+              setCameraDialogOpen(false);
+            });
+          }
+        }}}
+      >
+        <DialogTitle>Take a Photo</DialogTitle>
+        <DialogContent>
+          <Box sx={{ 
+            position: 'relative', 
+            width: '100%', 
+            minHeight: '400px',
+            bgcolor: 'black', 
+            borderRadius: 1, 
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: '500px',
+                display: 'block',
+                objectFit: 'contain'
+              }}
+            />
+            {!streamRef.current && (
+              <Box sx={{ 
+                position: 'absolute', 
+                color: 'white', 
+                textAlign: 'center' 
+              }}>
+                <CircularProgress sx={{ color: 'white' }} />
+                <Typography variant="body2" sx={{ mt: 2 }}>
+                  Starting camera...
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={stopCamera}>Cancel</Button>
+          <Button 
+            onClick={capturePhoto} 
+            variant="contained"
+            startIcon={<PhotoCamera />}
+            disabled={!streamRef.current}
+          >
+            Capture Photo
+          </Button>
         </DialogActions>
       </Dialog>
     </Container>

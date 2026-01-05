@@ -188,8 +188,17 @@ const RegisterPage = () => {
                 animate={{ opacity: 1, height: 'auto' }}
                 transition={{ duration: 0.3 }}
               >
-                <Alert severity="error" sx={{ mb: 3 }}>
-                  {error}
+                <Alert 
+                  severity="error" 
+                  sx={{ mb: 3 }}
+                  onClose={clearError}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    Registration Failed
+                  </Typography>
+                  <Typography variant="body2">
+                    {error}
+                  </Typography>
                 </Alert>
               </motion.div>
             )}

@@ -152,7 +152,10 @@ const ForgotPasswordPage = () => {
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     We've sent a password reset link to <strong>{submittedEmail}</strong>. 
-                    Please check your inbox and follow the instructions.
+                    Please check your inbox and click the link to reset your password.
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+                    Note: You will be able to set a new password via the link in the email.
                   </Typography>
                 </Alert>
               </motion.div>

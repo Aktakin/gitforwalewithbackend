@@ -394,6 +394,182 @@ const CreateProposalPage = () => {
     return `$${budget.min.toLocaleString()} - $${budget.max.toLocaleString()}`;
   };
 
+  // Step 3: Budget & Timeline - Regular function component (handlers are already memoized with useCallback)
+  const BudgetTimelineStep = () => (
+    <Box>
+      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
+        Budget & Timeline
+      </Typography>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                Your Budget *
+              </Typography>
+              
+              <FormControl fullWidth sx={{ mb: 3 }}>
+                <InputLabel>Budget Type</InputLabel>
+                <Select
+                  value={proposalData.budgetType}
+                  label="Budget Type"
+                  onChange={handleBudgetTypeChange}
+                >
+                  <MenuItem value="fixed">Fixed Price</MenuItem>
+                  <MenuItem value="hourly">Hourly Rate</MenuItem>
+                </Select>
+              </FormControl>
+
+              <Typography variant="body2" gutterBottom>
+                {proposalData.budgetType === 'fixed' ? 'Total Project Cost' : 'Hourly Rate'}
+              </Typography>
+              <TextField
+                id="budget-input"
+                fullWidth
+                type="number"
+                value={proposalData.budget}
+                onChange={handleBudgetChange}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                  endAdornment: proposalData.budgetType === 'hourly' && 
+                    <InputAdornment position="end">/hour</InputAdornment>
+                }}
+                sx={{ mb: 2 }}
+              />
+
+              <Typography variant="caption" color="text.secondary">
+                Client's budget: {requestData ? formatBudget(requestData.budget) : 'Loading...'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+                Timeline *
+              </Typography>
+              
+              <TextField
+                id="timeline-input"
+                fullWidth
+                placeholder="e.g., 6 weeks, 2 months, etc."
+                value={proposalData.timeline}
+                onChange={handleTimelineChange}
+                sx={{ mb: 2 }}
+              />
+
+              <FormControl fullWidth>
+                <InputLabel>Availability</InputLabel>
+                <Select
+                  value={proposalData.availability}
+                  label="Availability"
+                  onChange={handleAvailabilityChange}
+                >
+                  <MenuItem value="full-time">Full-time (40+ hours/week)</MenuItem>
+                  <MenuItem value="part-time">Part-time (20-40 hours/week)</MenuItem>
+                  <MenuItem value="weekends">Evenings/Weekends only</MenuItem>
+                </Select>
+              </FormControl>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {proposalData.budgetType === 'fixed' && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
+              Project Milestones (Optional)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Break down your project into milestones to help manage expectations and payments.
+            </Typography>
+
+            {proposalData.milestones.map((milestone, index) => (
+              <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Milestone name"
+                      value={milestone.name}
+                      onChange={(e) => updateMilestone(index, 'name', e.target.value)}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Description"
+                      value={milestone.description}
+                      onChange={(e) => updateMilestone(index, 'description', e.target.value)}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={2}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      placeholder="Amount"
+                      value={milestone.amount}
+                      onChange={(e) => updateMilestone(index, 'amount', e.target.value)}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start">$</InputAdornment>
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={2}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="date"
+                      value={milestone.deadline}
+                      onChange={(e) => updateMilestone(index, 'deadline', e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={1}>
+                    {proposalData.milestones.length > 1 && (
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => removeMilestone(index)}
+                      >
+                        <Delete />
+                      </Button>
+                    )}
+                  </Grid>
+                </Grid>
+              </Paper>
+            ))}
+
+            <Button
+              variant="outlined"
+              onClick={addMilestone}
+              sx={{ mt: 1 }}
+            >
+              Add Milestone
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={proposalData.additionalServices}
+            onChange={handleAdditionalServicesChange}
+          />
+        }
+        label="I'm open to providing additional services beyond the project scope"
+        sx={{ mt: 2 }}
+      />
+    </Box>
+  );
 
   // Show loading state
   if (loading) {
@@ -533,183 +709,6 @@ const CreateProposalPage = () => {
   );
 
   // Step 2: Your Proposal - Render content directly (no wrapper function)
-
-  // Step 3: Budget & Timeline
-  const BudgetTimelineStep = () => (
-    <Box>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-        Budget & Timeline
-      </Typography>
-
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                Your Budget *
-              </Typography>
-              
-              <FormControl fullWidth sx={{ mb: 3 }}>
-                <InputLabel>Budget Type</InputLabel>
-                <Select
-                  value={proposalData.budgetType}
-                  label="Budget Type"
-                  onChange={handleBudgetTypeChange}
-                >
-                  <MenuItem value="fixed">Fixed Price</MenuItem>
-                  <MenuItem value="hourly">Hourly Rate</MenuItem>
-                </Select>
-              </FormControl>
-
-              <Typography variant="body2" gutterBottom>
-                {proposalData.budgetType === 'fixed' ? 'Total Project Cost' : 'Hourly Rate'}
-              </Typography>
-              <TextField
-                id="budget-input"
-                fullWidth
-                type="number"
-                value={proposalData.budget}
-                onChange={handleBudgetChange}
-                InputProps={{
-                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                  endAdornment: proposalData.budgetType === 'hourly' && 
-                    <InputAdornment position="end">/hour</InputAdornment>
-                }}
-                sx={{ mb: 2 }}
-              />
-
-              <Typography variant="caption" color="text.secondary">
-                Client's budget: {formatBudget(requestData.budget)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-                Timeline *
-              </Typography>
-              
-              <TextField
-                id="timeline-input"
-                fullWidth
-                placeholder="e.g., 6 weeks, 2 months, etc."
-                value={proposalData.timeline}
-                onChange={handleTimelineChange}
-                sx={{ mb: 2 }}
-              />
-
-              <FormControl fullWidth>
-                <InputLabel>Availability</InputLabel>
-                <Select
-                  value={proposalData.availability}
-                  label="Availability"
-                  onChange={handleAvailabilityChange}
-                >
-                  <MenuItem value="full-time">Full-time (40+ hours/week)</MenuItem>
-                  <MenuItem value="part-time">Part-time (20-40 hours/week)</MenuItem>
-                  <MenuItem value="weekends">Evenings/Weekends only</MenuItem>
-                </Select>
-              </FormControl>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {proposalData.budgetType === 'fixed' && (
-        <Card sx={{ mt: 3 }}>
-          <CardContent>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-              Project Milestones (Optional)
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Break down your project into milestones to help manage expectations and payments.
-            </Typography>
-
-            {proposalData.milestones.map((milestone, index) => (
-              <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} md={3}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Milestone name"
-                      value={milestone.name}
-                      onChange={(e) => updateMilestone(index, 'name', e.target.value)}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Description"
-                      value={milestone.description}
-                      onChange={(e) => updateMilestone(index, 'description', e.target.value)}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type="number"
-                      placeholder="Amount"
-                      value={milestone.amount}
-                      onChange={(e) => updateMilestone(index, 'amount', e.target.value)}
-                      InputProps={{
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>
-                      }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={2}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type="date"
-                      value={milestone.deadline}
-                      onChange={(e) => updateMilestone(index, 'deadline', e.target.value)}
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={1}>
-                    {proposalData.milestones.length > 1 && (
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() => removeMilestone(index)}
-                      >
-                        <Delete />
-                      </Button>
-                    )}
-                  </Grid>
-                </Grid>
-              </Paper>
-            ))}
-
-            <Button
-              variant="outlined"
-              onClick={addMilestone}
-              sx={{ mt: 1 }}
-            >
-              Add Milestone
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={proposalData.additionalServices}
-            onChange={handleAdditionalServicesChange}
-          />
-        }
-        label="I'm open to providing additional services beyond the project scope"
-        sx={{ mt: 2 }}
-      />
-    </Box>
-  );
 
   // Step 4: Review & Submit
   const ReviewSubmitStep = () => (

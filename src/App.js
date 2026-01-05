@@ -40,7 +40,6 @@ import SupportPage from './pages/support/SupportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import ContactSellerPage from './pages/contact/ContactSellerPage';
-import ThemeToggle from './components/common/ThemeToggle';
 
 // Static Pages
 import AboutPage from './pages/static/AboutPage';
@@ -617,9 +616,6 @@ function App() {
       </Box>
       
       <Footer />
-      
-      {/* Floating Theme Toggle - Available on all pages */}
-      <ThemeToggle variant="floating" />
     </Box>
   );
 }
