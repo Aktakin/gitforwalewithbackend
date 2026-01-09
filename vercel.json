@@ -1,9 +1,13 @@
 {
-  "buildCommand": "CI=false npm run build",
+  "build": {
+    "env": {
+      "CI": "false"
+    }
+  },
+  "buildCommand": "npm run build",
   "outputDirectory": "build",
   "framework": "create-react-app",
   "rewrites": [
     { "source": "/(.*)", "destination": "/" }
   ]
 }
-
