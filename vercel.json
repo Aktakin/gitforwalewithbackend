@@ -1,12 +1,14 @@
 {
   "build": {
     "env": {
-      "CI": "false"
+      "CI": "false",
+      "NODE_OPTIONS": "--max-old-space-size=4096"
     }
   },
   "buildCommand": "npm run build",
   "outputDirectory": "build",
   "framework": "create-react-app",
+  "installCommand": "npm install --legacy-peer-deps",
   "rewrites": [
     { "source": "/(.*)", "destination": "/" }
   ]
