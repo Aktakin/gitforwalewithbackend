@@ -264,3 +264,5 @@ Your Stripe integration is complete! Users can now make real payments (in test m
 - Customize payment UI if needed
 - Switch to production keys when ready
 
+
+

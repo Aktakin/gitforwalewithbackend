@@ -404,7 +404,8 @@ export const SupabaseAuthProvider = ({ children }) => {
       return { success: false, error: 'No user logged in' };
     }
 
-    setLoading(true);
+    // Do not toggle global `loading` — it used to unmount the whole app (App/ProtectedRoute).
+    // Profile and settings pages use their own local saving state.
     setError(null);
 
     try {
@@ -433,13 +434,10 @@ export const SupabaseAuthProvider = ({ children }) => {
       const errorMessage = error.message || 'Failed to update profile';
       setError(errorMessage);
       return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
     }
   };
 
   const resetPassword = async (email) => {
-    setLoading(true);
     setError(null);
 
     try {
@@ -470,8 +468,6 @@ export const SupabaseAuthProvider = ({ children }) => {
       const errorMessage = error.message || 'Failed to send reset email';
       setError(errorMessage);
       return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
     }
   };
 

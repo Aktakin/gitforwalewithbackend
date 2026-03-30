@@ -5,7 +5,57 @@
  * Requires a backend API for secure operations (payment intent creation).
  */
 
-const STRIPE_API_URL = process.env.REACT_APP_PAYMENT_API_URL || 'http://localhost:3001/api/payments';
+/**
+ * Use a full URL to the payment server (not CRA's /api proxy). Calling `/api/...` on :3000 can
+ * return index.html if the dev proxy misbehaves — that caused "Unexpected token '<'" / HTML errors.
+ * CORS on server/payment-api.js allows http://localhost:3000 and http://127.0.0.1:3000.
+ */
+function getPaymentApiBase() {
+  const raw = (process.env.REACT_APP_PAYMENT_API_URL || '').replace(/\/$/, '');
+  if (raw && !/localhost:3001|127\.0\.0\.1:3001/.test(raw)) {
+    return raw;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    // eslint-disable-next-line no-console
+    console.error(
+      'Set REACT_APP_PAYMENT_API_URL in your host (e.g. Vercel) to your deployed payment API, e.g. https://your-service.railway.app/api/payments — not localhost.'
+    );
+  }
+  return 'http://localhost:3001/api/payments';
+}
+
+const STRIPE_API_URL = getPaymentApiBase();
+
+/** Avoid "Unexpected token '<'" when the dev server returns index.html instead of JSON. */
+async function parsePaymentApiJson(response) {
+  const text = await response.text();
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error(`Empty response from payment API (HTTP ${response.status}).`);
+  }
+  if (trimmed.startsWith('<!DOCTYPE') || trimmed.toLowerCase().startsWith('<html')) {
+    throw new Error(
+      'Payment server returned a web page instead of JSON — usually the React dev server, not payment-api. Run `npm run payment-api` (keep it open), open http://127.0.0.1:3001/health and confirm you see JSON, then try again.'
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Payment API did not return JSON (HTTP ${response.status}): ${trimmed.slice(0, 160)}`
+    );
+  }
+}
+
+function networkErrorHelp(err, url) {
+  const msg = err?.message || '';
+  if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('Load failed')) {
+    return new Error(
+      `Cannot reach payment server (${url}). Keep npm run payment-api running; open http://localhost:3001/health (JSON). If that works, this is often a browser/CORS issue — try the same hostname for the app and API (e.g. only use http://localhost:3000 for the app).`
+    );
+  }
+  return err;
+}
 
 class StripePaymentService {
   constructor() {
@@ -17,34 +67,35 @@ class StripePaymentService {
    */
   async createPaymentIntent({ amount, currency = 'usd', metadata = {} }) {
     try {
+      // `amount` is already in cents (see paymentService.createProposalPayment)
+      const amountCents = Math.round(amount);
       const response = await fetch(`${STRIPE_API_URL}/create-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Math.round(amount * 100), // Convert to cents
+          amount: amountCents,
           currency,
           metadata,
         }),
       });
 
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create payment intent');
+        throw new Error(data.error || 'Failed to create payment intent');
       }
 
-      const data = await response.json();
       return {
         id: data.id,
         clientSecret: data.clientSecret,
-        amount: Math.round(amount * 100),
+        amount: amountCents,
         currency,
         metadata,
       };
     } catch (error) {
       console.error('Error creating payment intent:', error);
-      throw error;
+      throw networkErrorHelp(error, `${STRIPE_API_URL}/create-intent`);
     }
   }
 
@@ -64,13 +115,11 @@ class StripePaymentService {
         }),
       });
 
+      const paymentIntent = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to confirm payment');
+        throw new Error(paymentIntent.error || 'Failed to confirm payment');
       }
 
-      const paymentIntent = await response.json();
-      
       // Return in format expected by paymentService
       return {
         id: paymentIntent.id,
@@ -84,7 +133,7 @@ class StripePaymentService {
       };
     } catch (error) {
       console.error('Error confirming payment:', error);
-      throw error;
+      throw networkErrorHelp(error, `${STRIPE_API_URL}/confirm-intent`);
     }
   }
 
@@ -94,16 +143,16 @@ class StripePaymentService {
   async getPaymentIntentStatus(paymentIntentId) {
     try {
       const response = await fetch(`${STRIPE_API_URL}/status/${paymentIntentId}`);
-      
+
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to get payment status');
+        throw new Error(data.error || 'Failed to get payment status');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Error getting payment status:', error);
-      throw error;
+      throw networkErrorHelp(error, `${STRIPE_API_URL}/status/...`);
     }
   }
 
@@ -150,12 +199,12 @@ class StripePaymentService {
         }),
       });
 
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create refund');
+        throw new Error(data.error || 'Failed to create refund');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Error creating refund:', error);
       throw error;
@@ -180,12 +229,12 @@ class StripePaymentService {
         }),
       });
 
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create payout');
+        throw new Error(data.error || 'Failed to create payout');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Error creating payout:', error);
       throw error;
@@ -211,12 +260,12 @@ class StripePaymentService {
         }),
       });
 
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create transfer');
+        throw new Error(data.error || 'Failed to create transfer');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Error creating transfer:', error);
       throw error;
@@ -236,12 +285,12 @@ class StripePaymentService {
         body: JSON.stringify({ paymentMethodId }),
       });
 
+      const data = await parsePaymentApiJson(response);
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to detach payment method');
+        throw new Error(data.error || 'Failed to detach payment method');
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Error detaching payment method:', error);
       throw error;

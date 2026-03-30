@@ -97,3 +97,5 @@ After successfully creating the table:
 2. ✅ Try the payment again
 3. ✅ The error should be gone!
 
+
+

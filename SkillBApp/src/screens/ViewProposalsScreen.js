@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/supabase';
+import { createProposalPayment } from '../lib/paymentService';
 import { transformProposal, formatTimeAgo } from '../utils/dataTransform';
 import { colors } from '../theme/colors';
 
@@ -87,18 +88,42 @@ const ViewProposalsScreen = ({ route, navigation, onClose }) => {
   const handleAccept = async (proposal) => {
     Alert.alert(
       'Accept Proposal',
-      `Are you sure you want to accept ${proposal.artisan.name}'s proposal?`,
+      `Are you sure you want to accept ${proposal.artisan.name}'s proposal for $${proposal.proposal.price.toLocaleString()}? You will be redirected to make payment.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Accept',
+          text: 'Accept & Pay',
           style: 'destructive',
           onPress: async () => {
             try {
+              // Accept the proposal first
               await db.proposals.accept(proposal.id, proposal.requestId);
-              Alert.alert('Success', 'Proposal accepted successfully!');
-              fetchProposals();
+              
+              // Create payment with escrow enabled (matching web app flow)
+              const paymentResult = await createProposalPayment(proposal.id, user.id);
+              
+              if (paymentResult.success && paymentResult.payment) {
+                // Navigate to payment screen
+                if (navigation?.navigate) {
+                  navigation.navigate('Payment', { paymentId: paymentResult.payment.id });
+                } else {
+                  Alert.alert(
+                    'Success', 
+                    'Proposal accepted! Please navigate to the payment screen to complete payment.',
+                    [
+                      {
+                        text: 'OK',
+                        onPress: () => fetchProposals()
+                      }
+                    ]
+                  );
+                }
+              } else {
+                Alert.alert('Success', 'Proposal accepted successfully!');
+                fetchProposals();
+              }
             } catch (error) {
+              console.error('Error accepting proposal:', error);
               Alert.alert('Error', `Failed to accept proposal: ${error.message}`);
             }
           }

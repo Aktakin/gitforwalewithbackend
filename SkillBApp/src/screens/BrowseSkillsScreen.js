@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, RefreshControl } from 'react-native';
-import { Text, Card, ActivityIndicator, Chip, Avatar, Searchbar } from 'react-native-paper';
+import { Text, Card, ActivityIndicator, Chip, Avatar, Searchbar, Button } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -97,7 +97,7 @@ const BrowseSkillsScreen = ({ navigation, onClose }) => {
           value={searchQuery}
           style={styles.searchbar}
         />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll} keyboardShouldPersistTaps="handled">
           {categories.map((category) => (
             <TouchableOpacity
               key={category}
@@ -126,6 +126,7 @@ const BrowseSkillsScreen = ({ navigation, onClose }) => {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
+        keyboardShouldPersistTaps="handled"
       >
         {loading ? (
           <View style={styles.loadingContainer}>

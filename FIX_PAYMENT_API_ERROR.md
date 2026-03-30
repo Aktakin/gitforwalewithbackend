@@ -83,3 +83,5 @@ Once both servers are running:
 2. Should see "Initializing payment..." then Stripe Elements
 3. No "Failed to fetch" error
 
+
+

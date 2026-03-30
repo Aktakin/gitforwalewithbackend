@@ -9,7 +9,7 @@ import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-const PublicProfileScreen = ({ route, navigation }) => {
+const PublicProfileScreen = ({ route, navigation, onClose }) => {
   const { userId } = route?.params || {};
   const { user: currentUser } = useAuth();
   const [profile, setProfile] = useState(null);
@@ -109,15 +109,29 @@ const PublicProfileScreen = ({ route, navigation }) => {
 
   const handleShareProfile = async () => {
     try {
-      const shareUrl = `skillbridge://profile/${userId}`;
-      const message = `Check out ${getDisplayName()}'s profile on SkillBridge!\n${shareUrl}`;
+      const displayName = getDisplayName();
+      const webUrl = `https://skillbridge.app/profile/${userId}`;
       
-      await Share.share({
-        message,
-        title: `${getDisplayName()} - SkillBridge Profile`,
+      const result = await Share.share({
+        message: `Check out ${displayName}'s profile on SkillBridge!\n\n${webUrl}`,
+        title: `${displayName} - SkillBridge Profile`,
+        url: webUrl,
       });
+      
+      if (result.action === Share.sharedAction) {
+        console.log('Profile shared successfully');
+      }
     } catch (error) {
       console.error('Error sharing profile:', error);
+      Alert.alert('Error', 'Unable to share profile');
+    }
+  };
+
+  const handleGoBack = () => {
+    if (onClose) {
+      onClose();
+    } else if (navigation?.goBack) {
+      navigation.goBack();
     }
   };
 
@@ -189,7 +203,7 @@ const PublicProfileScreen = ({ route, navigation }) => {
         <Text style={styles.loadingText}>Profile not found</Text>
         <Button
           mode="contained"
-          onPress={() => navigation?.goBack()}
+          onPress={handleGoBack}
           style={styles.backButton}
         >
           Go Back
@@ -214,6 +228,23 @@ const PublicProfileScreen = ({ route, navigation }) => {
         end={{ x: 1, y: 1 }}
         style={styles.header}
       >
+        {/* Back Button */}
+        <View style={styles.headerNav}>
+          <TouchableOpacity 
+            style={styles.backButtonHeader}
+            onPress={handleGoBack}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#FFFFFF" />
+            <Text style={styles.backButtonText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.shareButtonHeader}
+            onPress={handleShareProfile}
+          >
+            <MaterialCommunityIcons name="share-variant" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        
         <View style={styles.headerContent}>
           {/* Avatar */}
           <View style={styles.avatarContainer}>
@@ -423,11 +454,33 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   header: {
-    paddingTop: 60,
+    paddingTop: 50,
     paddingBottom: 32,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+  },
+  headerNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  backButtonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 8,
+    marginLeft: -8,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  shareButtonHeader: {
+    padding: 8,
+    marginRight: -8,
   },
   headerContent: {
     alignItems: 'center',

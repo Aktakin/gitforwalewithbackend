@@ -94,3 +94,5 @@ avatars/
 - Images are public for viewing (profile pictures need to be visible)
 - Consider adding image size/type validation in production
 
+
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Container,
@@ -52,10 +52,8 @@ import { db } from '../lib/supabase';
 import { transformRequest, formatTimeAgo } from '../utils/dataTransform';
 
 const DashboardPage = () => {
-  console.log('DashboardPage: Component rendering');
   const theme = useTheme();
-  const { user, loading: authLoading } = useAuth();
-  console.log('DashboardPage: Auth state', { user: user?.id, authLoading });
+  const { user } = useAuth();
   const { notifications, unreadMessages } = useSocket();
   const [dashboardData, setDashboardData] = useState({
     stats: {
@@ -78,23 +76,18 @@ const DashboardPage = () => {
   const [displayedRequests, setDisplayedRequests] = useState(4);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  /** Stops full-page spinner when the effect re-runs after first successful fetch for this user */
+  const fetchCompletedForUserId = useRef(null);
 
   useEffect(() => {
-    console.log('DashboardPage: useEffect running', { user: user?.id, authLoading });
     let isMounted = true;
-    
-    const fetchDashboardData = async () => {
-      console.log('DashboardPage: fetchDashboardData called', { authLoading, user: user?.id });
-      // Wait for auth to finish loading
-      if (authLoading) {
-        console.log('DashboardPage: Auth still loading, waiting...');
-        return;
-      }
 
+    const fetchDashboardData = async (silentRefresh = false) => {
       // If no user after auth finishes, user is not logged in
       if (!user) {
         console.log('No user found - user is not logged in');
         if (isMounted) {
+          fetchCompletedForUserId.current = null;
           setLoading(false);
         }
         return;
@@ -109,8 +102,12 @@ const DashboardPage = () => {
         return;
       }
 
+      const alreadyFetchedThisUser =
+        fetchCompletedForUserId.current === userId;
+
       try {
-        if (isMounted) {
+        // Full-page spinner only on first successful load per user
+        if (isMounted && !silentRefresh && !alreadyFetchedThisUser) {
           setLoading(true);
         }
         
@@ -223,6 +220,7 @@ const DashboardPage = () => {
       } finally {
         if (isMounted) {
           setLoading(false);
+          fetchCompletedForUserId.current = userId;
           console.log('Dashboard loading complete');
         }
       }
@@ -233,18 +231,11 @@ const DashboardPage = () => {
       fetchDashboardData();
     }, 100);
 
-    // Auto-refresh dashboard data every 15 seconds to get updated proposal counts
-    const interval = setInterval(() => {
-      if (user?.id && !authLoading) {
-        fetchDashboardData();
-      }
-    }, 15000);
-    
     return () => {
       isMounted = false;
-      clearInterval(interval);
     };
-  }, [user?.id, authLoading]); // Depend on both user.id and auth loading state
+    // user?.id only — auth `loading` flips on profile update etc. and must not re-run this effect
+  }, [user?.id]);
 
   const handleLoadMore = () => {
     setLoadingMore(true);
@@ -464,7 +455,7 @@ const DashboardPage = () => {
         <Box sx={{ mb: 4 }}>
           <Typography variant="h3" component="h1" gutterBottom sx={{ 
             fontWeight: 700,
-            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+            background: 'linear-gradient(135deg, #1565C0 0%, #0D47A1 100%)',
             backgroundClip: 'text',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
@@ -472,7 +463,7 @@ const DashboardPage = () => {
             Welcome back, {user?.firstName || 'User'}! 🎉
           </Typography>
           <Typography variant="h6" color="text.secondary" sx={{ mb: 3 }}>
-            Here's what's happening with your SkillBridge activity
+            Heres whats happening with your SkillBridge activity
           </Typography>
         </Box>
       </motion.div>

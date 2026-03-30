@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Card, Searchbar, Accordion, Button, TextInput } from 'react-native-paper';
+import { Text, Card, Searchbar, Chip, Button, TextInput } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -93,7 +93,7 @@ const SupportScreen = ({ navigation, onClose }) => {
         />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Card style={styles.contactCard}>
           <Card.Content>
             <Text style={styles.contactTitle}>Need More Help?</Text>

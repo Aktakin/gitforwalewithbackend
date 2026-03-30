@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity, Dimensions, Modal } from 'react-native';
 import { Text, TextInput, Button, Card, Chip, ActivityIndicator, Switch, Divider, List, IconButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/supabase';
 import { colors } from '../theme/colors';
-// Date picker will use native modal or text input
 
 const { width } = Dimensions.get('window');
 
@@ -49,7 +49,7 @@ const urgencyLevels = [
 const budgetTypes = ['Fixed Price', 'Hourly Rate', 'Negotiable'];
 const serviceTypes = [
   { value: 'remote', label: 'Remote Only', icon: 'home', description: 'Work can be done completely online' },
-  { value: 'in-person', label: 'In-Person Only', icon: 'office-building', description: 'Physical presence required' },
+  { value: 'local', label: 'In-Person Only', icon: 'office-building', description: 'Physical presence required' },
   { value: 'both', label: 'Both Remote & In-Person', icon: 'earth', description: 'Open to either arrangement' }
 ];
 
@@ -101,6 +101,10 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
   const [currentTag, setCurrentTag] = useState('');
   const [currentRequirement, setCurrentRequirement] = useState('');
   const [currentQualification, setCurrentQualification] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
+  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [manualDateInput, setManualDateInput] = useState('');
 
   const steps = [
     'Basic Information',
@@ -134,7 +138,7 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
         break;
         
       case 2:
-        if (formData.serviceType !== 'remote' && !formData.location.city) {
+        if (formData.serviceType !== 'remote' && formData.serviceType !== 'both' && !formData.location.city) {
           newErrors.locationCity = 'City is required for in-person services';
         }
         break;
@@ -271,7 +275,7 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
         deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null,
         urgency: formData.urgency || 'medium',
         service_type: formData.serviceType || 'both',
-        location: formData.serviceType !== 'remote' && formData.location ? {
+        location: (formData.serviceType === 'local' || formData.serviceType === 'both') && formData.location ? {
           city: formData.location.city || '',
           state: formData.location.state || '',
           country: formData.location.country || '',
@@ -294,7 +298,8 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
       }
     } catch (error) {
       console.error('Error creating request:', error);
-      Alert.alert('Error', 'Failed to create request. Please try again.');
+      const errorMessage = error?.message || error?.error?.message || 'Failed to create request. Please try again.';
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -318,12 +323,16 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
             {errors.title && <Text style={styles.errorText}>{errors.title}</Text>}
 
             <Text style={styles.label}>Category *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} keyboardShouldPersistTaps="handled">
               {categories.map((cat) => (
                 <Chip
                   key={cat}
                   selected={formData.category === cat}
-                  onPress={() => handleInputChange('category', cat)}
+                  onPress={() => {
+                    handleInputChange('category', cat);
+                    setShowCustomCategory(false);
+                    setCustomCategory('');
+                  }}
             style={styles.chip}
                   mode={formData.category === cat ? 'flat' : 'outlined'}
                   selectedColor={colors.primary.main}
@@ -331,7 +340,41 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
                   {cat}
                 </Chip>
               ))}
+              {/* Custom Category Option */}
+              <Chip
+                key="custom"
+                selected={showCustomCategory || (formData.category && !categories.includes(formData.category))}
+                onPress={() => {
+                  setShowCustomCategory(true);
+                  handleInputChange('category', '');
+                }}
+                style={styles.chip}
+                mode={showCustomCategory || (formData.category && !categories.includes(formData.category)) ? 'flat' : 'outlined'}
+                selectedColor={colors.secondary.main}
+                icon="plus"
+              >
+                Other
+              </Chip>
             </ScrollView>
+            
+            {/* Custom Category Input */}
+            {(showCustomCategory || (formData.category && !categories.includes(formData.category))) && (
+              <View style={styles.customCategoryContainer}>
+                <TextInput
+                  label="Enter Custom Category *"
+                  value={customCategory || (formData.category && !categories.includes(formData.category) ? formData.category : '')}
+                  onChangeText={(value) => {
+                    setCustomCategory(value);
+                    handleInputChange('category', value);
+                  }}
+                  mode="outlined"
+                  style={styles.input}
+                  placeholder="e.g., Digital Art, 3D Printing, etc."
+                  left={<TextInput.Icon icon="tag-plus" />}
+                />
+                <Text style={styles.hintText}>Enter your own category if none of the above fit</Text>
+              </View>
+            )}
             {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
 
       <Text style={styles.label}>Project Size</Text>
@@ -447,25 +490,128 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
       </Card>
 
       <Text style={styles.label}>Project Deadline *</Text>
-      <TextInput
-        label="Deadline (YYYY-MM-DD)"
-        value={formData.deadline ? new Date(formData.deadline).toISOString().split('T')[0] : ''}
-        onChangeText={(value) => {
-          if (value) {
-            const date = new Date(value);
-            if (!isNaN(date.getTime())) {
-              handleInputChange('deadline', date.toISOString());
+      
+      {/* Manual Date Entry */}
+      <View style={styles.dateInputContainer}>
+        <TextInput
+          label="Enter Date (MM/DD/YYYY)"
+          value={manualDateInput || (formData.deadline ? new Date(formData.deadline).toLocaleDateString('en-US') : '')}
+          onChangeText={(value) => {
+            setManualDateInput(value);
+            // Try to parse the date as user types
+            const dateFormats = [
+              /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // MM/DD/YYYY
+              /^(\d{4})-(\d{1,2})-(\d{1,2})$/, // YYYY-MM-DD
+              /^(\d{1,2})-(\d{1,2})-(\d{4})$/, // MM-DD-YYYY
+            ];
+            
+            for (const format of dateFormats) {
+              const match = value.match(format);
+              if (match) {
+                let year, month, day;
+                if (format === dateFormats[1]) {
+                  [, year, month, day] = match;
+                } else {
+                  [, month, day, year] = match;
+                }
+                const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                if (!isNaN(date.getTime()) && date > new Date()) {
+                  handleInputChange('deadline', date.toISOString());
+                }
+                break;
+              }
             }
-          }
-        }}
-        mode="outlined"
-        style={styles.input}
-        error={!!errors.deadline}
-        placeholder="e.g., 2024-12-31"
-        keyboardType="default"
-      />
+          }}
+          mode="outlined"
+          style={[styles.input, { flex: 1 }]}
+          error={!!errors.deadline}
+          placeholder="e.g., 01/31/2026"
+          left={<TextInput.Icon icon="calendar-edit" />}
+        />
+        <TouchableOpacity 
+          onPress={() => setShowDatePicker(true)}
+          style={styles.calendarButton}
+        >
+          <MaterialCommunityIcons 
+            name="calendar-search" 
+            size={28} 
+            color={colors.primary.main} 
+          />
+        </TouchableOpacity>
+      </View>
+      
+      {/* Show selected date info */}
+      {formData.deadline && (
+        <View style={styles.selectedDateInfo}>
+          <MaterialCommunityIcons name="check-circle" size={18} color={colors.success.main} />
+          <Text style={styles.selectedDateText}>
+            {new Date(formData.deadline).toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+            {' • '}
+            {Math.ceil((new Date(formData.deadline) - new Date()) / (1000 * 60 * 60 * 24))} days from now
+          </Text>
+        </View>
+      )}
+      
       {errors.deadline && <Text style={styles.errorText}>{errors.deadline}</Text>}
-      <Text style={styles.hintText}>Enter date in YYYY-MM-DD format</Text>
+      <Text style={styles.hintText}>Type a date or tap the calendar icon to pick from calendar</Text>
+
+      {/* Date Picker Modal for iOS */}
+      {Platform.OS === 'ios' && (
+        <Modal
+          visible={showDatePicker}
+          transparent={true}
+          animationType="slide"
+        >
+          <View style={styles.datePickerModalOverlay}>
+            <View style={styles.datePickerModalContent}>
+              <View style={styles.datePickerModalHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.datePickerModalCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={styles.datePickerModalTitle}>Select Deadline</Text>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.datePickerModalDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={formData.deadline ? new Date(formData.deadline) : new Date()}
+                mode="date"
+                display="spinner"
+                minimumDate={new Date()}
+                onChange={(event, selectedDate) => {
+                  if (selectedDate) {
+                    handleInputChange('deadline', selectedDate.toISOString());
+                    setManualDateInput(selectedDate.toLocaleDateString('en-US'));
+                  }
+                }}
+                style={styles.iosDatePicker}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Date Picker for Android */}
+      {Platform.OS === 'android' && showDatePicker && (
+        <DateTimePicker
+          value={formData.deadline ? new Date(formData.deadline) : new Date()}
+          mode="date"
+          display="default"
+          minimumDate={new Date()}
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (event.type === 'set' && selectedDate) {
+              handleInputChange('deadline', selectedDate.toISOString());
+              setManualDateInput(selectedDate.toLocaleDateString('en-US'));
+            }
+          }}
+        />
+      )}
 
       <Text style={styles.label}>Priority Level</Text>
       <View style={styles.urgencyContainer}>
@@ -530,7 +676,7 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
         </Card.Content>
       </Card>
 
-      {formData.serviceType !== 'remote' && (
+      {(formData.serviceType === 'local' || formData.serviceType === 'both') && (
         <>
           <TextInput
             label="City *"
@@ -753,6 +899,7 @@ const CreateRequestScreen = ({ onClose, onSuccess }) => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Card style={styles.card} mode="outlined">
           <Card.Content>
@@ -943,6 +1090,38 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
+  customCategoryContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  calendarButton: {
+    padding: 12,
+    backgroundColor: colors.primary.main + '15',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedDateInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success.main + '15',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  selectedDateText: {
+    fontSize: 13,
+    color: colors.success.dark,
+    fontWeight: '500',
+    flex: 1,
+  },
   budgetRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -963,20 +1142,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
   },
-  dateButton: {
+  datePickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.divider,
     marginBottom: 12,
   },
-  dateButtonText: {
+  datePickerButtonError: {
+    borderColor: colors.error.main,
+    borderWidth: 2,
+  },
+  datePickerContent: {
+    flex: 1,
     marginLeft: 12,
+  },
+  datePickerLabel: {
     fontSize: 16,
+    fontWeight: '600',
     color: colors.text.primary,
+  },
+  datePickerPlaceholder: {
+    color: colors.text.secondary,
+    fontWeight: '400',
+  },
+  datePickerSubtext: {
+    fontSize: 12,
+    color: colors.primary.main,
+    marginTop: 2,
+  },
+  datePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  datePickerModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  datePickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  datePickerModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  datePickerModalCancel: {
+    fontSize: 16,
+    color: colors.error.main,
+  },
+  datePickerModalDone: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary.main,
+  },
+  iosDatePicker: {
+    height: 200,
   },
   urgencyContainer: {
     marginBottom: 12,

@@ -430,7 +430,7 @@ const CreateProposalScreen = ({ route, navigation, onClose }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {renderStepContent()}
         </ScrollView>
       </KeyboardAvoidingView>

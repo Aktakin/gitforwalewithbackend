@@ -83,8 +83,8 @@ const NewMessageScreen = ({ onClose, onSuccess }) => {
       await db.messages.send({
         conversation_id: conversation.id,
         sender_id: user.id,
-        message: message.trim(),
-        created_at: new Date().toISOString(),
+        content: message.trim(),
+        read: false,
       });
 
       Alert.alert('Success', `Message sent to ${selectedUser.firstName} ${selectedUser.lastName}!`, [
@@ -123,6 +123,7 @@ const NewMessageScreen = ({ onClose, onSuccess }) => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Search Bar */}
         <Card style={styles.card}>

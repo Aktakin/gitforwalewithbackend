@@ -28,3 +28,5 @@ BEGIN
     RAISE NOTICE '✅ Proposals status constraint updated! Now allows: pending, accepted, rejected, completed';
 END $$;
 
+
+

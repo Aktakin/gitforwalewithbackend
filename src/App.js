@@ -59,25 +59,25 @@ import BlogPage from './pages/static/BlogPage';
 // Context hooks
 import { useAuth } from './contexts/SupabaseAuthContext';
 
-// Protected Route Component
+// Only block on loading when there is no user yet (login / session). If user exists,
+// keep showing the page — otherwise profile updates etc. set loading and remount the whole app.
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  
-  if (loading) {
+
+  if (loading && !user) {
     return <LoadingSpinner />;
   }
-  
+
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Public Route Component (redirect if logged in)
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  
-  if (loading) {
+
+  if (loading && !user) {
     return <LoadingSpinner />;
   }
-  
+
   return !user ? children : <Navigate to="/dashboard" replace />;
 };
 
@@ -94,17 +94,12 @@ const PageWrapper = ({ children }) => (
 );
 
 function App() {
-  const { loading } = useAuth();
+  const { user, loading } = useAuth();
 
-  // Log to verify App component is rendering
-  console.log('App component rendering, loading:', loading);
-
-  if (loading) {
-    console.log('Showing loading spinner...');
+  if (loading && !user) {
     return <LoadingSpinner />;
   }
 
-  console.log('Rendering main app...');
   return (
     <Box sx={{ 
       display: 'flex', 

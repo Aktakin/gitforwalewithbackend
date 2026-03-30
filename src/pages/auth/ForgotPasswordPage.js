@@ -21,7 +21,7 @@ import { useAuth } from '../../contexts/SupabaseAuthContext';
 
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
-  const { resetPassword, loading, error, clearError } = useAuth();
+  const { resetPassword, error, clearError } = useAuth();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -29,6 +29,7 @@ const ForgotPasswordPage = () => {
   const [formErrors, setFormErrors] = useState({});
   const [success, setSuccess] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -68,12 +69,16 @@ const ForgotPasswordPage = () => {
     
     if (!validateForm()) return;
 
-    const result = await resetPassword(formData.email);
-    
-    if (result.success) {
-      setSuccess(true);
-      setSubmittedEmail(formData.email);
-      setFormData({ email: '' });
+    setSubmitting(true);
+    try {
+      const result = await resetPassword(formData.email);
+      if (result.success) {
+        setSuccess(true);
+        setSubmittedEmail(formData.email);
+        setFormData({ email: '' });
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -186,7 +191,7 @@ const ForgotPasswordPage = () => {
                   onChange={handleInputChange}
                   error={!!formErrors.email}
                   helperText={formErrors.email}
-                  disabled={loading}
+                  disabled={submitting}
                   sx={{ mb: 3 }}
                   InputProps={{
                     startAdornment: (
@@ -203,7 +208,7 @@ const ForgotPasswordPage = () => {
                   fullWidth
                   variant="contained"
                   size="large"
-                  disabled={loading}
+                  disabled={submitting}
                   sx={{
                     mb: 2,
                     py: 1.5,
@@ -213,7 +218,7 @@ const ForgotPasswordPage = () => {
                     },
                   }}
                 >
-                  {loading ? (
+                  {submitting ? (
                     <CircularProgress size={24} color="inherit" />
                   ) : (
                     'Send Reset Link'

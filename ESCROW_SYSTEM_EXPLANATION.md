@@ -241,3 +241,5 @@ A: Funds stay in your account. You can manually pay them, or they can connect th
 **Q: How do I know if escrow is working?**
 A: Check payment status in database - it should be `held` after payment, then `released` after completion.
 
+
+

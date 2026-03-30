@@ -133,6 +133,7 @@ const CreateSkillScreen = ({ onClose, onSuccess }) => {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Card style={styles.card}>
           <Card.Content>
@@ -163,7 +164,7 @@ const CreateSkillScreen = ({ onClose, onSuccess }) => {
             {errors.description && <Text style={styles.errorText}>{errors.description}</Text>}
 
             <Text style={styles.label}>Category *</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll} keyboardShouldPersistTaps="handled">
               {categories.map((cat) => (
                 <Chip
                   key={cat}

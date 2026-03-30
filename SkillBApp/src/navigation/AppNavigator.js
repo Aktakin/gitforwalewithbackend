@@ -38,6 +38,9 @@ import SupportScreen from '../screens/SupportScreen';
 import AboutScreen from '../screens/AboutScreen';
 import PrivacyScreen from '../screens/PrivacyScreen';
 import TermsScreen from '../screens/TermsScreen';
+import ClientDashboardScreen from '../screens/ClientDashboardScreen';
+import ProviderDashboardScreen from '../screens/ProviderDashboardScreen';
+import PaymentScreen from '../screens/PaymentScreen';
 
 const AppNavigator = () => {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -47,6 +50,7 @@ const AppNavigator = () => {
   const [authScreen, setAuthScreen] = useState('Login');
   const [modalScreen, setModalScreen] = useState(null); // Various modal screens
   const [modalParams, setModalParams] = useState({}); // Parameters for modal screens
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0); // Key to trigger dashboard refresh
   
   // Animation values for each tab
   const tabAnimations = useRef({
@@ -205,15 +209,21 @@ const AppNavigator = () => {
       switch (currentScreen) {
         case 'Dashboard':
           return <DashboardScreen 
+            key={`dashboard-${dashboardRefreshKey}`}
+            refreshKey={dashboardRefreshKey}
             onNavigateToCreateRequest={() => setModalScreen('CreateRequest')}
             onNavigateToCreateSkill={() => setModalScreen('CreateSkill')}
             onNavigateToRequestDetail={(requestId) => {
               setModalParams({ requestId });
               setModalScreen('RequestDetail');
             }}
+            onNavigateToClientDashboard={() => setModalScreen('ClientDashboard')}
+            onNavigateToProviderDashboard={() => setModalScreen('ProviderDashboard')}
           />;
         case 'Requests':
           return <RequestsScreen 
+            key={`requests-${dashboardRefreshKey}`}
+            refreshKey={dashboardRefreshKey}
             onNavigateToCreateRequest={() => setModalScreen('CreateRequest')}
             onNavigateToCreateSkill={() => setModalScreen('CreateSkill')}
             onNavigateToRequestDetail={(requestId) => {
@@ -257,9 +267,15 @@ const AppNavigator = () => {
               setModalParams({});
               setModalScreen('Notifications');
             }}
+            onNavigateToPublicProfile={(userId) => {
+              setModalParams({ userId });
+              setModalScreen('PublicProfile');
+            }}
           />;
         default:
           return <DashboardScreen 
+            key={`dashboard-${dashboardRefreshKey}`}
+            refreshKey={dashboardRefreshKey}
             onNavigateToCreateRequest={() => setModalScreen('CreateRequest')}
             onNavigateToCreateSkill={() => setModalScreen('CreateSkill')}
           />;
@@ -273,8 +289,11 @@ const AppNavigator = () => {
             <CreateRequestScreen
               onClose={() => setModalScreen(null)}
               onSuccess={() => {
-                // Refresh the current screen if needed
+                // Trigger dashboard refresh and close modal
+                setDashboardRefreshKey(prev => prev + 1);
                 setModalScreen(null);
+                // Navigate to dashboard to show the new request
+                setCurrentScreen('Dashboard');
               }}
             />
           </View>
@@ -382,6 +401,14 @@ const AppNavigator = () => {
               route={{ params: modalParams }}
               navigation={{
                 goBack: () => setModalScreen(null),
+                navigate: (screen, params) => {
+                  setModalParams(params || {});
+                  if (screen === 'Payment') {
+                    setModalScreen('Payment');
+                  } else if (screen === 'RequestDetail') {
+                    setModalScreen('RequestDetail');
+                  }
+                },
               }}
               onClose={() => setModalScreen(null)}
             />
@@ -422,17 +449,17 @@ const AppNavigator = () => {
       }
       if (modalScreen === 'PublicProfile') {
         return (
-          <View style={styles.modalOverlayWithTabBar}>
+          <View style={styles.modalOverlay}>
             <PublicProfileScreen
               route={{ params: modalParams }}
               navigation={{
                 goBack: () => setModalScreen(null),
                 navigate: (screen, params) => {
                   if (screen === 'NewMessage') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('NewMessage');
                   } else if (screen === 'EditProfile') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('EditProfile');
                   }
                 },
@@ -451,21 +478,37 @@ const AppNavigator = () => {
                 goBack: () => setModalScreen(null),
                 navigate: (screen, params) => {
                   if (screen === 'EditProfile') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('EditProfile');
                   } else if (screen === 'Support') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('Support');
                   } else if (screen === 'Privacy') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('Privacy');
                   } else if (screen === 'Terms') {
-                    setModalParams(params);
+                    setModalParams(params || {});
                     setModalScreen('Terms');
                   }
                 },
               }}
               onClose={() => setModalScreen(null)}
+              onNavigateToEditProfile={() => {
+                setModalParams({});
+                setModalScreen('EditProfile');
+              }}
+              onNavigateToSupport={() => {
+                setModalParams({});
+                setModalScreen('Support');
+              }}
+              onNavigateToTerms={() => {
+                setModalParams({});
+                setModalScreen('Terms');
+              }}
+              onNavigateToPrivacy={() => {
+                setModalParams({});
+                setModalScreen('Privacy');
+              }}
             />
           </View>
         );
@@ -572,6 +615,56 @@ const AppNavigator = () => {
                 goBack: () => setModalScreen(null),
               }}
               onClose={() => setModalScreen(null)}
+            />
+          </View>
+        );
+      }
+      if (modalScreen === 'ClientDashboard') {
+        return (
+          <View style={styles.modalOverlayWithTabBar}>
+            <ClientDashboardScreen
+              onClose={() => setModalScreen(null)}
+              onNavigateToRequestDetail={(requestId) => {
+                setModalParams({ requestId });
+                setModalScreen('RequestDetail');
+              }}
+              onNavigateToCreateRequest={() => setModalScreen('CreateRequest')}
+            />
+          </View>
+        );
+      }
+      if (modalScreen === 'ProviderDashboard') {
+        return (
+          <View style={styles.modalOverlayWithTabBar}>
+            <ProviderDashboardScreen
+              onClose={() => setModalScreen(null)}
+              onNavigateToRequestDetail={(requestId) => {
+                setModalParams({ requestId });
+                setModalScreen('RequestDetail');
+              }}
+              onNavigateToCreateSkill={() => setModalScreen('CreateSkill')}
+            />
+          </View>
+        );
+      }
+      if (modalScreen === 'Payment') {
+        return (
+          <View style={styles.modalOverlayWithTabBar}>
+            <PaymentScreen
+              route={{ params: modalParams }}
+              navigation={{
+                goBack: () => setModalScreen(null),
+                navigate: (screen, params) => {
+                  setModalParams(params || {});
+                  if (screen === 'RequestDetail') {
+                    setModalScreen('RequestDetail');
+                  } else if (screen === 'ViewProposals') {
+                    setModalScreen('ViewProposals');
+                  } else if (screen === 'Payment') {
+                    setModalScreen('Payment');
+                  }
+                },
+              }}
             />
           </View>
         );
@@ -739,9 +832,9 @@ const AppNavigator = () => {
         {/* Modal Screens */}
         {renderModal()}
 
-        {/* Enhanced Bottom Tab Bar - Show for RequestDetail and ViewProposals, hide for full-screen modals */}
-        {(!modalScreen || modalScreen === 'RequestDetail' || modalScreen === 'ViewProposals') && (
-          <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        {/* Enhanced Bottom Tab Bar - Show for RequestDetail, ViewProposals, and Payment, hide for full-screen modals */}
+        {(!modalScreen || modalScreen === 'RequestDetail' || modalScreen === 'ViewProposals' || modalScreen === 'Payment') && (
+          <View style={[styles.tabBarWrapper, { paddingBottom: insets.bottom }]}>
             {/* Sophisticated top border with gradient */}
             <LinearGradient
               colors={[colors.primary.main + '20', colors.primary.light + '10', 'transparent']}
@@ -750,29 +843,10 @@ const AppNavigator = () => {
               style={styles.topBorderGradient}
             />
             
-            {/* Blur background for iOS, solid for Android */}
-            {Platform.OS === 'ios' ? (
-              (() => {
-                try {
-                  const { BlurView } = require('expo-blur');
-                  return (
-                    <BlurView intensity={80} tint="light" style={styles.tabBarContainer}>
-                      {renderTabBarContent()}
-                    </BlurView>
-                  );
-                } catch (e) {
-                  return (
-                    <View style={[styles.tabBarContainer, { backgroundColor: 'rgba(255, 255, 255, 0.95)' }]}>
-                      {renderTabBarContent()}
-                    </View>
-                  );
-                }
-              })()
-            ) : (
-              <View style={styles.tabBarContainer}>
-                {renderTabBarContent()}
-              </View>
-            )}
+            {/* White background for all platforms */}
+            <View style={styles.tabBarContainer}>
+              {renderTabBarContent()}
+            </View>
           </View>
         )}
       </View>
@@ -815,7 +889,7 @@ const styles = StyleSheet.create({
     zIndex: 2000, // Higher than modal to ensure it's always visible when shown
   },
   tabBarContainer: {
-    backgroundColor: Platform.OS === 'ios' ? 'transparent' : '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 0,
     ...Platform.select({
       ios: {

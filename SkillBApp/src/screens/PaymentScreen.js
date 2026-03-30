@@ -16,7 +16,7 @@ import {
 } from 'react-native-paper';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../lib/supabase';
+import { db, supabase } from '../lib/supabase';
 import { createPaymentIntent, formatAmount, getStatusLabel, getStatusColor } from '../lib/paymentService';
 import { colors } from '../theme/colors';
 
@@ -105,8 +105,27 @@ const PaymentScreen = ({ route, navigation }) => {
         return;
       }
 
-      // Payment succeeded
+      // Payment succeeded - markAsPaid will set status to 'held' if escrow is enabled (matching web app)
       await db.payments.markAsPaid(payment.id, intent.id);
+      
+      // Create transaction record (matching web app flow)
+      try {
+        await supabase
+          .from('transactions')
+          .insert({
+            payment_id: payment.id,
+            user_id: payment.payer_id,
+            type: 'payment',
+            amount: payment.amount,
+            currency: payment.currency || 'USD',
+            status: 'completed',
+            description: `Payment for ${payment.payment_type || 'proposal_acceptance'}`,
+            provider_transaction_id: intent.id,
+          });
+      } catch (transactionError) {
+        console.warn('Transaction creation failed (non-critical):', transactionError);
+      }
+      
       await loadPayment();
       Alert.alert('Success', 'Payment successful! Funds are now held in escrow.');
     } catch (err) {

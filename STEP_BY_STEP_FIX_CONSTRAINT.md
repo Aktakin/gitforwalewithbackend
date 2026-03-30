@@ -87,3 +87,5 @@ CHECK (status IN ('pending', 'accepted', 'rejected', 'completed'));
 
 If you cannot modify the database constraint, we can change the code to use `'accepted'` status for completed projects instead. Let me know if you need this alternative approach.
 
+
+

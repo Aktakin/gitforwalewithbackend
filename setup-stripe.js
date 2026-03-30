@@ -1,88 +1,84 @@
 /**
- * Stripe Setup Script
- * 
- * This script helps you configure your Stripe keys.
- * Run: node setup-stripe.js
+ * Writes Stripe-related keys into .env files from environment variables.
+ * Never commit real keys. Run in PowerShell:
+ *
+ *   $env:STRIPE_PUBLISHABLE_KEY="pk_test_..."; $env:STRIPE_SECRET_KEY="sk_test_..."; node setup-stripe.js
+ *
+ * Or set STRIPE_PUBLISHABLE_KEY / STRIPE_SECRET_KEY in your shell, then: node setup-stripe.js
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_51SkSEvGKPkzXCzxqFvApki5JZ3CjeER1yb5ljjTZTkUgA96KT0PSIVRDJKdjLzseNs3EnUtXJgWG9DHkihnKxc7U003GRglZie';
-const STRIPE_SECRET_KEY = 'sk_test_your_secret_key_here';
+const STRIPE_PUBLISHABLE_KEY =
+  process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_REPLACE_ME';
+const STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY || 'sk_test_REPLACE_ME';
+
+if (STRIPE_PUBLISHABLE_KEY.includes('REPLACE') || STRIPE_SECRET_KEY.includes('REPLACE')) {
+  console.log('\nSet keys first, for example (PowerShell):');
+  console.log('  $env:STRIPE_PUBLISHABLE_KEY="pk_test_..."');
+  console.log('  $env:STRIPE_SECRET_KEY="sk_test_..."');
+  console.log('  node setup-stripe.js\n');
+  console.log('Or copy .env.example → .env and server/.env.example → server/.env and edit by hand.\n');
+}
 
 const rootEnvPath = path.join(__dirname, '.env');
 const backendEnvPath = path.join(__dirname, 'server', '.env');
 
-// Read existing .env file if it exists
 let existingEnv = '';
 if (fs.existsSync(rootEnvPath)) {
   existingEnv = fs.readFileSync(rootEnvPath, 'utf8');
   console.log('✅ Found existing .env file');
 } else {
-  console.log('📝 Creating new .env file');
+  console.log('📝 Will create new .env file');
 }
 
-// Check if Stripe keys are already configured
 const hasStripeKey = existingEnv.includes('REACT_APP_STRIPE_PUBLISHABLE_KEY');
 const hasSupabase = existingEnv.includes('REACT_APP_SUPABASE_URL');
 
-// Build new .env content
 let newEnvContent = existingEnv;
 
-// Add Supabase config if not present (keep existing if present)
 if (!hasSupabase) {
-  console.log('⚠️  Supabase keys not found. You may need to add them manually.');
+  console.log('⚠️  Supabase keys not found. Add REACT_APP_SUPABASE_* to .env if you use auth/data.');
   newEnvContent += '\n# Supabase Configuration\n';
   newEnvContent += 'REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co\n';
   newEnvContent += 'REACT_APP_SUPABASE_ANON_KEY=your-anon-key-here\n';
 }
 
-// Add or update Stripe keys
 if (hasStripeKey) {
-  // Replace existing Stripe key
   newEnvContent = newEnvContent.replace(
     /REACT_APP_STRIPE_PUBLISHABLE_KEY=.*/,
     `REACT_APP_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}`
   );
-  console.log('✅ Updated existing Stripe publishable key');
+  console.log('✅ Updated REACT_APP_STRIPE_PUBLISHABLE_KEY');
 } else {
-  // Add new Stripe keys
   newEnvContent += '\n# Stripe Configuration\n';
   newEnvContent += `REACT_APP_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}\n`;
   newEnvContent += 'REACT_APP_PAYMENT_API_URL=http://localhost:3001/api/payments\n';
-  console.log('✅ Added Stripe publishable key');
+  console.log('✅ Added Stripe frontend variables');
 }
 
-// Ensure there's a newline at the end
 if (!newEnvContent.endsWith('\n')) {
   newEnvContent += '\n';
 }
 
-// Write .env file
 fs.writeFileSync(rootEnvPath, newEnvContent, 'utf8');
-console.log('✅ Frontend .env file configured');
+console.log('✅ Frontend .env written:', rootEnvPath);
 
-// Create backend .env file
-const backendEnvContent = `# Stripe Backend Configuration
+if (!fs.existsSync(path.join(__dirname, 'server'))) {
+  fs.mkdirSync(path.join(__dirname, 'server'), { recursive: true });
+}
+
+const backendEnvContent = `# Stripe Backend — keep secret; never commit this file
 STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
 PORT=3001
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 `;
 
-// Create server directory if it doesn't exist
-if (!fs.existsSync(path.join(__dirname, 'server'))) {
-  fs.mkdirSync(path.join(__dirname, 'server'), { recursive: true });
-}
-
 fs.writeFileSync(backendEnvPath, backendEnvContent, 'utf8');
-console.log('✅ Backend .env file configured');
+console.log('✅ Backend .env written:', backendEnvPath);
 
-console.log('\n🎉 Stripe configuration complete!');
-console.log('\n📋 Next steps:');
-console.log('1. If you haven\'t already, add your Supabase keys to .env');
-console.log('2. Install backend dependencies: npm install express stripe cors dotenv');
-console.log('3. Start backend server: npm run payment-api');
-console.log('4. Restart frontend: npm start');
-console.log('\n✅ Your Stripe test keys are now configured!');
-
+console.log('\nNext: npm run payment-api   (terminal 1)');
+console.log('      npm start             (terminal 2)');
+console.log('Test card: 4242 4242 4242 4242\n');

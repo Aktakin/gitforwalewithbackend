@@ -84,3 +84,5 @@ CREATE TRIGGER update_payments_updated_at
 -- Success message
 SELECT '✅ Payments table created successfully!' AS result;
 
+
+

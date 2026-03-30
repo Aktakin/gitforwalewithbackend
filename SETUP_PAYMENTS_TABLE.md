@@ -78,3 +78,5 @@ After creating the table:
 2. ✅ Check that payments are being saved to the database
 3. ✅ Verify Stripe integration is working
 
+
+

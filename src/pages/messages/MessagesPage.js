@@ -94,14 +94,14 @@ const MessagesPage = () => {
 
   // Fetch conversations from database
   useEffect(() => {
-    const fetchConversations = async () => {
+    const fetchConversations = async (silentRefresh = false) => {
       if (authLoading || !user?.id) {
         setLoading(false);
         return;
       }
 
       try {
-        setLoading(true);
+        if (!silentRefresh) setLoading(true);
         console.log('Fetching conversations for user:', user.id);
         
         const dbConversations = await db.conversations.getUserConversations(user.id);
@@ -208,12 +208,12 @@ const MessagesPage = () => {
 
     fetchConversations();
     
-    // Refresh conversations every 10 seconds to show new messages
+    // Background refresh — no "Loading conversations..." flash
     const interval = setInterval(() => {
       if (!authLoading && user?.id) {
-        fetchConversations();
+        fetchConversations(true);
       }
-    }, 10000);
+    }, 60000);
     
     return () => clearInterval(interval);
   }, [user?.id, authLoading]);

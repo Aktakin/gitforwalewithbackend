@@ -96,3 +96,5 @@ Allows providers to connect their own Stripe accounts to receive payments direct
 
 That's it! The escrow system is working. The only thing needed for full automation is Stripe Connect for providers.
 
+
+

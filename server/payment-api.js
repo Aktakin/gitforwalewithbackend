@@ -36,11 +36,30 @@ const cors = require('cors');
 
 const app = express();
 
-// Middleware
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
-  credentials: true,
-}));
+// CRA may use 3002, 3003, … if 3000 is taken — CORS must allow that origin (see console: blocked from :3002).
+const defaultDevOrigins = [];
+for (let port = 3000; port <= 3020; port++) {
+  defaultDevOrigins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+}
+defaultDevOrigins.push('http://localhost:5173', 'http://127.0.0.1:5173'); // Vite default
+
+const extraOrigins =
+  process.env.ALLOWED_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) || [];
+const corsOrigins = [...new Set([...defaultDevOrigins, ...extraOrigins])];
+
+const strictCors = process.env.STRIPE_CORS_STRICT === '1';
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!strictCors) return callback(null, true);
+      if (!origin) return callback(null, true);
+      if (corsOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Health check
@@ -233,10 +252,11 @@ app.post('/api/payments/detach-payment-method', async (req, res) => {
   }
 });
 
-// Start server
+// Start server — listen on all interfaces so localhost / 127.0.0.1 / LAN IP all work
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`✅ Stripe Payment API server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`✅ Stripe Payment API server running on http://localhost:${PORT} (bound ${HOST})`);
   console.log(`📝 Make sure STRIPE_SECRET_KEY is set in .env`);
   console.log(`🔗 API endpoint: http://localhost:${PORT}/api/payments`);
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { Text, Card, Button, TextInput, ActivityIndicator, Avatar, Chip, Switch } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity } from 'react-native';
+import { Text, Card, Button, TextInput, ActivityIndicator, Avatar, Chip, Switch, RadioButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -129,7 +129,7 @@ const EditProfileScreen = ({ navigation, onClose }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Card style={styles.card}>
             <Card.Content>
               <View style={styles.avatarSection}>
@@ -191,6 +191,51 @@ const EditProfileScreen = ({ navigation, onClose }) => {
                 onChangeText={(text) => setFormData(prev => ({ ...prev, bio: text }))}
                 style={styles.textInput}
               />
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Account Type</Text>
+              <Text style={styles.helperText}>Select how you want to use SkillBridge</Text>
+              <View style={styles.userTypeContainer}>
+                <TouchableOpacity 
+                  style={[styles.userTypeOption, formData.userType === 'customer' && styles.userTypeOptionActive]}
+                  onPress={() => setFormData(prev => ({ ...prev, userType: 'customer' }))}
+                >
+                  <MaterialCommunityIcons 
+                    name="account-search" 
+                    size={28} 
+                    color={formData.userType === 'customer' ? colors.primary.main : colors.text.secondary} 
+                  />
+                  <Text style={[styles.userTypeLabel, formData.userType === 'customer' && styles.userTypeLabelActive]}>Customer</Text>
+                  <Text style={styles.userTypeDescription}>Looking for services</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.userTypeOption, formData.userType === 'provider' && styles.userTypeOptionActive]}
+                  onPress={() => setFormData(prev => ({ ...prev, userType: 'provider' }))}
+                >
+                  <MaterialCommunityIcons 
+                    name="briefcase" 
+                    size={28} 
+                    color={formData.userType === 'provider' ? colors.primary.main : colors.text.secondary} 
+                  />
+                  <Text style={[styles.userTypeLabel, formData.userType === 'provider' && styles.userTypeLabelActive]}>Provider</Text>
+                  <Text style={styles.userTypeDescription}>Offering services</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.userTypeOption, formData.userType === 'both' && styles.userTypeOptionActive]}
+                  onPress={() => setFormData(prev => ({ ...prev, userType: 'both' }))}
+                >
+                  <MaterialCommunityIcons 
+                    name="account-switch" 
+                    size={28} 
+                    color={formData.userType === 'both' ? colors.primary.main : colors.text.secondary} 
+                  />
+                  <Text style={[styles.userTypeLabel, formData.userType === 'both' && styles.userTypeLabelActive]}>Both</Text>
+                  <Text style={styles.userTypeDescription}>Customer & Provider</Text>
+                </TouchableOpacity>
+              </View>
             </Card.Content>
           </Card>
 
@@ -357,6 +402,44 @@ const styles = StyleSheet.create({
   },
   textInput: {
     marginBottom: 16,
+  },
+  helperText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 16,
+  },
+  userTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  userTypeOption: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#F5F7FA',
+  },
+  userTypeOptionActive: {
+    borderColor: colors.primary.main,
+    backgroundColor: colors.primary.main + '10',
+  },
+  userTypeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text.secondary,
+    marginTop: 8,
+  },
+  userTypeLabelActive: {
+    color: colors.primary.main,
+  },
+  userTypeDescription: {
+    fontSize: 10,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginTop: 4,
   },
   switchRow: {
     flexDirection: 'row',

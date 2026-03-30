@@ -7,6 +7,7 @@
  */
 
 import { initStripe, useStripe } from '@stripe/stripe-react-native';
+import { db } from './supabase';
 
 // Stripe publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -164,6 +165,65 @@ export const getStatusLabel = (status) => {
     cancelled: 'Cancelled',
   };
   return labels[status] || status;
+};
+
+/**
+ * Create payment for proposal acceptance (matching web app flow)
+ * This creates a payment record with escrow enabled
+ */
+export const createProposalPayment = async (proposalId, userId) => {
+  try {
+    // Get proposal details
+    const proposal = await db.proposals.getById(proposalId);
+    
+    if (!proposal) {
+      throw new Error('Proposal not found');
+    }
+
+    const amount = proposal.proposed_price || proposal.budget || 0;
+    const providerUserId = proposal.user_id;
+
+    // Check if payment already exists for this proposal
+    const existingPayment = await db.payments.getByProposal(proposalId);
+    if (existingPayment) {
+      return {
+        success: true,
+        payment: existingPayment,
+        paymentIntent: existingPayment.stripe_payment_intent_id ? { id: existingPayment.stripe_payment_intent_id } : null,
+      };
+    }
+
+    // Create payment record in database with escrow enabled (matching web app)
+    const paymentData = {
+      proposal_id: proposalId,
+      request_id: proposal.request_id,
+      payer_id: userId, // Client (payer)
+      payee_id: providerUserId, // Provider (payee)
+      amount: amount,
+      currency: 'USD',
+      status: 'pending',
+      payment_type: 'proposal_acceptance',
+      is_escrow: true, // Enable escrow - funds held until completion (matching web app)
+      metadata: {
+        providerUserId: providerUserId, // Store provider ID for later transfer
+      },
+    };
+
+    const payment = await db.payments.create(paymentData);
+
+    return {
+      success: true,
+      payment,
+      fees: {
+        platformFee: 0,
+        processingFee: 0,
+        netAmount: amount,
+      },
+    };
+  } catch (error) {
+    console.error('Error creating proposal payment:', error);
+    throw error;
+  }
 };
 
 

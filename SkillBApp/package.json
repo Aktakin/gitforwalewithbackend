@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "^8.3.0",
+    "@stripe/stripe-react-native": "^0.37.2",
     "@supabase/supabase-js": "^2.39.0",
     "expo": "54.0.22",
     "expo-constants": "~18.0.10",
@@ -20,8 +22,7 @@
     "react-native-paper": "^5.12.3",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-screens": "~4.16.0",
-    "@stripe/stripe-react-native": "^0.37.2"
+    "react-native-screens": "~4.16.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2"

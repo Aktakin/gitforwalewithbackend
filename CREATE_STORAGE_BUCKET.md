@@ -138,3 +138,5 @@ avatars/
 
 Each user can only upload to their own folder, keeping things organized and secure!
 
+
+

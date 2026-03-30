@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Image, Dimensions } from 'react-native';
-import { Text, Card, ActivityIndicator, Chip, Searchbar, Avatar, Badge, Button } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import { Text, ActivityIndicator, Chip, Searchbar, Avatar, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/supabase';
@@ -9,34 +9,11 @@ import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-// Get artisan-related image based on category
-const getArtisanImage = (category, index) => {
-  const categoryMap = {
-    'Woodworking & Carpentry': 'https://source.unsplash.com/400x250/?woodworking,carpentry,handmade',
-    'Pottery & Ceramics': 'https://source.unsplash.com/400x250/?pottery,ceramics,clay',
-    'Painting & Fine Arts': 'https://source.unsplash.com/400x250/?painting,art,canvas',
-    'Jewelry Making': 'https://source.unsplash.com/400x250/?jewelry,gemstones,handmade',
-    'Textile & Fiber Arts': 'https://source.unsplash.com/400x250/?textile,weaving,fabric',
-    'Metalworking & Blacksmithing': 'https://source.unsplash.com/400x250/?metalworking,blacksmith,forge',
-    'Glassblowing & Glasswork': 'https://source.unsplash.com/400x250/?glassblowing,glass,artisan',
-    'Leatherworking': 'https://source.unsplash.com/400x250/?leather,craft,handmade',
-    'Stone Carving & Sculpture': 'https://source.unsplash.com/400x250/?sculpture,stone,carving',
-    'Furniture Making': 'https://source.unsplash.com/400x250/?furniture,woodworking,craft',
-    'Tailoring & Sewing': 'https://source.unsplash.com/400x250/?tailoring,sewing,fabric',
-    'Restoration & Conservation': 'https://source.unsplash.com/400x250/?restoration,antique,craft',
-  };
-  
-  return categoryMap[category] || `https://source.unsplash.com/400x250/?artisan,handmade,craft?${index}`;
-};
-
-
-const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, onNavigateToRequestDetail }) => {
+const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToRequestDetail, refreshKey }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeView, setActiveView] = useState('requests'); // 'requests' or 'skills'
   const [requests, setRequests] = useState([]);
-  const [skills, setSkills] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedUrgency, setSelectedUrgency] = useState('All');
@@ -79,61 +56,13 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
     }
   };
 
-  const fetchSkills = async () => {
-    try {
-      setLoading(true);
-
-      const dbSkills = await db.skills.getPublicSkills({
-        search: searchQuery || undefined,
-        category: selectedCategory !== 'All' ? selectedCategory : undefined,
-      });
-
-      const allSkills = (dbSkills || []).map(skill => ({
-        id: skill.id,
-        title: skill.title,
-        category: skill.category,
-        description: skill.description,
-        price: { min: skill.price_min || skill.hourly_rate || 0, max: skill.price_max || skill.hourly_rate || 0 },
-        rating: skill.rating || 0,
-        reviews: skill.review_count || 0,
-        orders: skill.order_count || 0,
-        deliveryTime: skill.delivery_time || '14 days',
-        user: skill.users ? {
-          firstName: skill.users.first_name || '',
-          lastName: skill.users.last_name || '',
-          avatar: skill.users.profile_picture,
-          isVerified: skill.users.is_verified || false,
-        } : null,
-        location: skill.location || '',
-        tags: skill.tags || [],
-        createdAt: skill.created_at ? new Date(skill.created_at) : new Date(),
-      }));
-
-      setSkills(allSkills);
-    } catch (error) {
-      console.error('Error fetching skills:', error);
-      setSkills([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
   useEffect(() => {
-    if (activeView === 'requests') {
-      fetchRequests();
-    } else {
-      fetchSkills();
-    }
-  }, [searchQuery, activeView, selectedCategory, selectedUrgency]);
+    fetchRequests();
+  }, [searchQuery, selectedCategory, selectedUrgency, refreshKey]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    if (activeView === 'requests') {
-      fetchRequests();
-    } else {
-      fetchSkills();
-    }
+    fetchRequests();
   };
 
   // Filter requests
@@ -155,27 +84,9 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
     return true;
   });
 
-  // Filter skills
-  const filteredSkills = skills.filter(skill => {
-    if (selectedCategory !== 'All' && skill.category !== selectedCategory) {
-      return false;
-    }
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      return (
-        skill.title?.toLowerCase().includes(query) ||
-        skill.description?.toLowerCase().includes(query) ||
-        skill.category?.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
-
-  // Get unique categories from both requests and skills
+  // Get unique categories from requests
   const requestCategories = requests.map(r => r.category).filter(Boolean);
-  const skillCategories = skills.map(s => s.category).filter(Boolean);
-  const categories = ['All', ...new Set([...requestCategories, ...skillCategories])];
-  const urgencyLevels = ['All', 'Urgent', 'High', 'Medium', 'Low'];
+  const categories = ['All', ...new Set(requestCategories)];
 
   if (loading) {
     return (
@@ -200,60 +111,18 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
         />
       </View>
 
-      {/* View Toggle */}
-      <View style={styles.toggleContainer}>
-        <View style={styles.toggleWrapper}>
-          <TouchableOpacity
-            style={[styles.toggleButton, activeView === 'requests' && styles.toggleButtonActive]}
-            onPress={() => setActiveView('requests')}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name={activeView === 'requests' ? 'file-document-multiple' : 'file-document-multiple-outline'}
-              size={20}
-              color={activeView === 'requests' ? '#FFFFFF' : '#666666'}
-              style={styles.toggleIcon}
-            />
-            <Text style={[styles.toggleText, activeView === 'requests' && styles.toggleTextActive]}>
-              Requests
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleButton, activeView === 'skills' && styles.toggleButtonActive]}
-            onPress={() => setActiveView('skills')}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name={activeView === 'skills' ? 'hammer-wrench' : 'hammer-wrench-outline'}
-              size={20}
-              color={activeView === 'skills' ? '#FFFFFF' : '#666666'}
-              style={styles.toggleIcon}
-            />
-            <Text style={[styles.toggleText, activeView === 'skills' && styles.toggleTextActive]}>
-              Skills
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Create Button below Toggle */}
+      {/* Create Button */}
       <View style={styles.createRequestHeader}>
           <Button
             mode="contained"
             icon="plus"
-            onPress={() => {
-              if (activeView === 'requests') {
-                onNavigateToCreateRequest?.();
-              } else {
-                onNavigateToCreateSkill?.();
-              }
-            }}
+            onPress={() => onNavigateToCreateRequest?.()}
             style={styles.createRequestButton}
             contentStyle={styles.createRequestButtonContent}
             labelStyle={styles.createRequestButtonLabel}
             buttonColor={colors.primary.main}
           >
-            {activeView === 'requests' ? 'Create Request' : 'Create Skill'}
+            Create Request
           </Button>
       </View>
 
@@ -263,6 +132,7 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroll}
         contentContainerStyle={styles.filterContent}
+        keyboardShouldPersistTaps="handled"
       >
         <Chip
           selected={selectedCategory === 'All'}
@@ -292,16 +162,14 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary.main} />
         }
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Results Count */}
         <View style={styles.resultsHeader}>
           <Text style={styles.resultsText}>
-            {activeView === 'requests' 
-              ? `${filteredRequests.length} ${filteredRequests.length === 1 ? 'Request' : 'Requests'} Found`
-              : `${filteredSkills.length} ${filteredSkills.length === 1 ? 'Skill' : 'Skills'} Found`
-            }
+            {filteredRequests.length} {filteredRequests.length === 1 ? 'Request' : 'Requests'} Found
           </Text>
-          {activeView === 'requests' && selectedUrgency !== 'All' && (
+          {selectedUrgency !== 'All' && (
             <Chip
               style={styles.activeFilterChip}
               textStyle={styles.activeFilterChipText}
@@ -312,12 +180,10 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
           )}
         </View>
 
-        {/* Requests View */}
-        {activeView === 'requests' && (
-          <>
-            {filteredRequests.length === 0 ? (
-          <Card style={styles.emptyCard} mode="outlined">
-            <Card.Content style={styles.emptyCardContent}>
+        {/* Requests List */}
+        {filteredRequests.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyCardContent}>
               <MaterialCommunityIcons
                 name="file-document-outline"
                 size={64}
@@ -327,313 +193,156 @@ const RequestsScreen = ({ onNavigateToCreateRequest, onNavigateToCreateSkill, on
               <Text style={styles.emptySubtext}>
                 Try adjusting your filters or search terms
               </Text>
-            </Card.Content>
-          </Card>
+            </View>
+          </View>
         ) : (
           filteredRequests.map((request, index) => {
-            const imageUrl = getArtisanImage(request.category, index);
+            // Get category profession
+            const getCategoryProfession = (category) => {
+              const categoryMap = {
+                'Woodworking & Carpentry': 'Woodworker',
+                'Pottery & Ceramics': 'Potter',
+                'Painting & Fine Arts': 'Artist',
+                'Jewelry Making': 'Jeweler',
+                'Textile & Fiber Arts': 'Textile Artist',
+                'Metalworking & Blacksmithing': 'Metalworker',
+                'Glassblowing & Glasswork': 'Glassblower',
+                'Leatherworking': 'Leatherworker',
+                'Stone Carving & Sculpture': 'Sculptor',
+                'Bookbinding & Paper Arts': 'Bookbinder',
+                'Tailoring & Sewing': 'Tailor',
+                'Furniture Making': 'Furniture Maker',
+                'Restoration & Conservation': 'Restorer',
+              };
+              return categoryMap[category] || 'Artisan';
+            };
+
+            const getUrgencyStyle = (urgency) => {
+              switch (urgency) {
+                case 'urgent':
+                  return { bg: colors.primary.main + '15', color: colors.primary.main, label: 'Urgent' };
+                case 'high':
+                  return { bg: colors.primary.main + '15', color: colors.primary.main, label: 'High Priority' };
+                case 'medium':
+                  return { bg: colors.primary.main + '10', color: colors.primary.main, label: 'Medium' };
+                default:
+                  return { bg: colors.primary.main + '08', color: colors.primary.main, label: 'Low' };
+              }
+            };
+
+            const urgencyStyle = getUrgencyStyle(request.urgency);
             
             return (
-              <Card
+              <TouchableOpacity
                 key={request.id}
                 style={styles.requestCard}
-                mode="outlined"
-                onPress={() => {
-                  onNavigateToRequestDetail?.(request.id);
-                }}
+                activeOpacity={0.9}
+                onPress={() => onNavigateToRequestDetail?.(request.id)}
               >
-                <Image
-                  source={{ uri: imageUrl }}
-                  style={styles.requestImage}
-                  resizeMode="cover"
-                />
-                <Card.Content style={styles.cardContent}>
+                <View style={styles.cardContent}>
+                  {/* Header */}
                   <View style={styles.requestHeader}>
                     <View style={styles.requestTitleContainer}>
+                      <Text style={styles.professionHeading}>
+                        {getCategoryProfession(request.category)} Needed!
+                      </Text>
                       <Text style={styles.requestTitle} numberOfLines={2}>
                         {request.title}
                       </Text>
-                      <Text style={styles.requestCategory}>{request.category}</Text>
                     </View>
-                    <Chip
-                      style={[
-                        styles.urgencyChip,
-                        styles.urgencyChipOutlined,
-                      ]}
-                      textStyle={styles.urgencyChipText}
-                      mode="outlined"
-                    >
-                      {request.urgency || 'low'}
-                    </Chip>
+                    <TouchableOpacity style={styles.bookmarkBtn}>
+                      <MaterialCommunityIcons name="bookmark-outline" size={22} color={colors.text.secondary} />
+                    </TouchableOpacity>
                   </View>
 
+                  {/* Tags */}
+                  <View style={styles.tagsRow}>
+                    <View style={[styles.tagChip, { backgroundColor: colors.primary.main + '15' }]}>
+                      <MaterialCommunityIcons name="tag" size={12} color={colors.primary.main} />
+                      <Text style={[styles.tagChipText, { color: colors.primary.main }]}>{request.category}</Text>
+                    </View>
+                    <View style={[styles.tagChip, { backgroundColor: urgencyStyle.bg }]}>
+                      <MaterialCommunityIcons name="clock-outline" size={12} color={urgencyStyle.color} />
+                      <Text style={[styles.tagChipText, { color: urgencyStyle.color }]}>{urgencyStyle.label}</Text>
+                    </View>
+                  </View>
+
+                  {/* Description */}
                   {request.description && (
-                    <Text style={styles.requestDescription} numberOfLines={3}>
+                    <Text style={styles.requestDescription} numberOfLines={2}>
                       {request.description}
                     </Text>
                   )}
 
-                  <View style={styles.requestStats}>
-                    <View style={styles.statItem}>
-                      <MaterialCommunityIcons
-                        name="currency-usd"
-                        size={18}
-                        color={colors.primary.main}
-                      />
-                      <Text style={styles.statText}>
-                        {request.budget?.min > 0
-                          ? `$${request.budget.min.toLocaleString()}-${request.budget.max.toLocaleString()}`
-                          : 'Budget flexible'}
-                      </Text>
+                  {/* Info Grid */}
+                  <View style={styles.infoGrid}>
+                    <View style={styles.infoItem}>
+                      <MaterialCommunityIcons name="cash" size={18} color={colors.primary.main} />
+                      <View>
+                        <Text style={styles.infoLabel}>Budget</Text>
+                        <Text style={styles.infoValue}>
+                          {request.budget?.min > 0 ? `$${request.budget.min} - $${request.budget.max}` : 'Flexible'}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.statItem}>
-                      <MaterialCommunityIcons
-                        name="file-document-multiple-outline"
-                        size={18}
-                        color={colors.text.secondary}
-                      />
-                      <Text style={styles.statText}>
-                        {request.proposals || 0} proposals
-                      </Text>
+                    <View style={styles.infoItem}>
+                      <MaterialCommunityIcons name="file-document-multiple" size={18} color={colors.primary.main} />
+                      <View>
+                        <Text style={styles.infoLabel}>Proposals</Text>
+                        <Text style={styles.infoValue}>{request.proposals || 0} received</Text>
+                      </View>
                     </View>
-                    <View style={styles.statItem}>
-                      <MaterialCommunityIcons
-                        name="eye"
-                        size={18}
-                        color={colors.text.secondary}
-                      />
-                      <Text style={styles.statText}>
-                        {request.views || 0} views
-                      </Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <MaterialCommunityIcons
-                        name="clock-outline"
-                        size={18}
-                        color={colors.text.secondary}
-                      />
-                      <Text style={styles.statText}>
-                        {formatTimeAgo(request.createdAt)}
-                      </Text>
+                    <View style={styles.infoItem}>
+                      <MaterialCommunityIcons name="calendar-clock" size={18} color={colors.primary.main} />
+                      <View>
+                        <Text style={styles.infoLabel}>Posted</Text>
+                        <Text style={styles.infoValue}>{formatTimeAgo(request.createdAt)}</Text>
+                      </View>
                     </View>
                   </View>
 
+                  {/* Divider */}
+                  <View style={styles.divider} />
+
+                  {/* Footer */}
                   <View style={styles.requestFooter}>
                     {request.user && (
                       <View style={styles.requestUser}>
                         {request.user.avatar || request.user.profilePicture ? (
                           <Avatar.Image
-                            size={32}
+                            size={36}
                             source={{ uri: request.user.avatar || request.user.profilePicture }}
                           />
                         ) : (
-                          <Avatar.Text
-                            size={32}
-                            label={`${request.user.firstName?.[0] || ''}${request.user.lastName?.[0] || ''}`.toUpperCase() || 'U'}
-                            style={{ backgroundColor: colors.primary.main }}
-                          />
+                          <View style={styles.avatarPlaceholder}>
+                            <Text style={styles.avatarText}>
+                              {request.user.firstName?.[0]?.toUpperCase() || 'U'}
+                            </Text>
+                          </View>
                         )}
                         <View style={styles.userInfo}>
                           <Text style={styles.userName}>
                             {request.user.firstName} {request.user.lastName}
                           </Text>
-                          <Text style={styles.userType}>Client</Text>
+                          <View style={styles.verifiedRow}>
+                            <MaterialCommunityIcons name="star" size={12} color={colors.primary.main} />
+                            <Text style={styles.verifiedText}>Verified Client</Text>
+                          </View>
                         </View>
                       </View>
                     )}
                     <TouchableOpacity
-                      style={styles.applyButton}
-                      onPress={() => {
-                        onNavigateToRequestDetail?.(request.id);
-                      }}
+                      style={styles.viewDetailsBtn}
+                      onPress={() => onNavigateToRequestDetail?.(request.id)}
                     >
-                      <MaterialCommunityIcons
-                        name="send"
-                        size={18}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.applyButtonText}>Apply</Text>
+                      <Text style={styles.viewDetailsBtnText}>View Details</Text>
+                      <MaterialCommunityIcons name="arrow-right" size={16} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
-                </Card.Content>
-              </Card>
+                </View>
+              </TouchableOpacity>
             );
           })
-        )}
-          </>
-        )}
-
-        {/* Skills View */}
-        {activeView === 'skills' && (
-          <>
-            {filteredSkills.length === 0 ? (
-              <Card style={styles.emptyCard} mode="outlined">
-                <Card.Content style={styles.emptyCardContent}>
-                  <MaterialCommunityIcons
-                    name="hammer-wrench-outline"
-                    size={64}
-                    color={colors.text.secondary}
-                  />
-                  <Text style={styles.emptyText}>No skills found</Text>
-                  <Text style={styles.emptySubtext}>
-                    Try adjusting your filters or search terms
-                  </Text>
-                </Card.Content>
-              </Card>
-            ) : (
-              filteredSkills.map((skill, index) => {
-                const imageUrl = getArtisanImage(skill.category, index);
-                
-                return (
-                  <Card
-                    key={skill.id}
-                    style={styles.skillCard}
-                    mode="outlined"
-                    onPress={() => {
-                      console.log('View skill:', skill.id);
-                    }}
-                  >
-                    <Image
-                      source={{ uri: imageUrl }}
-                      style={styles.requestImage}
-                      resizeMode="cover"
-                    />
-                    <Card.Content style={styles.cardContent}>
-                      <View style={styles.skillHeader}>
-                        <View style={styles.skillTitleContainer}>
-                          <Text style={styles.requestTitle} numberOfLines={2}>
-                            {skill.title}
-                          </Text>
-                          <Text style={styles.requestCategory}>{skill.category}</Text>
-                        </View>
-                        {skill.user?.isVerified && (
-                          <MaterialCommunityIcons
-                            name="check-circle"
-                            size={20}
-                            color={colors.primary.main}
-                          />
-                        )}
-                      </View>
-
-                      {skill.description && (
-                        <Text style={styles.requestDescription} numberOfLines={3}>
-                          {skill.description}
-                        </Text>
-                      )}
-
-                      <View style={styles.skillStats}>
-                        <View style={styles.statItem}>
-                          <MaterialCommunityIcons
-                            name="star"
-                            size={18}
-                            color="#FFB800"
-                          />
-                          <Text style={styles.statText}>
-                            {skill.rating?.toFixed(1) || '4.5'} ({skill.reviews || 0})
-                          </Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <MaterialCommunityIcons
-                            name="currency-usd"
-                            size={18}
-                            color={colors.primary.main}
-                          />
-                          <Text style={styles.statText}>
-                            ${skill.price?.min?.toLocaleString() || '0'}-${skill.price?.max?.toLocaleString() || '0'}
-                          </Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <MaterialCommunityIcons
-                            name="briefcase-outline"
-                            size={18}
-                            color={colors.text.secondary}
-                          />
-                          <Text style={styles.statText}>
-                            {skill.orders || 0} orders
-                          </Text>
-                        </View>
-                        {skill.deliveryTime && (
-                          <View style={styles.statItem}>
-                            <MaterialCommunityIcons
-                              name="clock-outline"
-                              size={18}
-                              color={colors.text.secondary}
-                            />
-                            <Text style={styles.statText}>
-                              {skill.deliveryTime}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      {skill.tags && skill.tags.length > 0 && (
-                        <View style={styles.tagsContainer}>
-                          {skill.tags.slice(0, 3).map((tag, tagIndex) => (
-                            <Chip
-                              key={tagIndex}
-                              style={styles.tagChip}
-                              textStyle={styles.tagChipText}
-                              mode="outlined"
-                            >
-                              {tag}
-                            </Chip>
-                          ))}
-                        </View>
-                      )}
-
-                      <View style={styles.requestFooter}>
-                        {skill.user && (
-                          <View style={styles.requestUser}>
-                            {skill.user.avatar || skill.user.profilePicture ? (
-                              <Avatar.Image
-                                size={32}
-                                source={{ uri: skill.user.avatar || skill.user.profilePicture }}
-                              />
-                            ) : (
-                              <Avatar.Text
-                                size={32}
-                                label={`${skill.user.firstName?.[0] || ''}${skill.user.lastName?.[0] || ''}`.toUpperCase() || 'U'}
-                                style={{ backgroundColor: colors.primary.main }}
-                              />
-                            )}
-                            <View style={styles.userInfo}>
-                              <View style={styles.userNameContainer}>
-                                <Text style={styles.userName}>
-                                  {skill.user.firstName} {skill.user.lastName}
-                                </Text>
-                                {skill.user.isVerified && (
-                                  <MaterialCommunityIcons
-                                    name="check-circle"
-                                    size={14}
-                                    color={colors.primary.main}
-                                    style={styles.verifiedIcon}
-                                  />
-                                )}
-                              </View>
-                              <Text style={styles.userType}>Provider</Text>
-                            </View>
-                          </View>
-                        )}
-                        <TouchableOpacity
-                          style={styles.contactButton}
-                          onPress={() => {
-                            console.log('Contact provider:', skill.id);
-                          }}
-                        >
-                          <MaterialCommunityIcons
-                            name="message-text"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.contactButtonText}>Contact</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </Card.Content>
-                  </Card>
-                );
-              })
-            )}
-          </>
         )}
       </ScrollView>
     </View>
@@ -656,53 +365,9 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     fontSize: 14,
   },
-  toggleContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  toggleWrapper: {
-    flexDirection: 'row',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
-  },
-  toggleButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
-  },
-  toggleButtonActive: {
-    backgroundColor: '#000000',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  toggleIcon: {
-    marginRight: 0,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text.secondary,
-  },
-  toggleTextActive: {
-    color: '#FFFFFF',
-  },
   createRequestHeader: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -826,22 +491,28 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
   },
+  // Sophisticated Request Card
   requestCard: {
-    borderRadius: 16,
     backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
     overflow: 'hidden',
-    elevation: 0,
-  },
-  requestImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#F0F0F0',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 0, 0, 0.12)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   cardContent: {
-    padding: 16,
+    padding: 18,
   },
   requestHeader: {
     flexDirection: 'row',
@@ -853,71 +524,99 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  requestTitle: {
+  professionHeading: {
     fontSize: 18,
     fontWeight: '700',
+    color: colors.primary.main,
+    marginBottom: 4,
+  },
+  requestTitle: {
+    fontSize: 15,
+    fontWeight: '500',
     color: colors.text.primary,
-    marginBottom: 6,
-    lineHeight: 24,
+    lineHeight: 22,
   },
-  requestCategory: {
-    fontSize: 13,
-    color: colors.primary.main,
-    fontWeight: '600',
+  bookmarkBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F7FA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  urgencyChip: {
-    height: 26,
-    paddingHorizontal: 10,
-  },
-  urgencyChipOutlined: {
-    borderWidth: 1,
-    borderColor: colors.primary.main,
-    backgroundColor: '#FFFFFF',
-  },
-  urgencyChipText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.primary.main,
-    textTransform: 'capitalize',
-  },
-  requestDescription: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  requestStats: {
+  tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    gap: 8,
+    marginBottom: 12,
   },
-  statItem: {
+  tagChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  statText: {
+  tagChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  requestDescription: {
     fontSize: 13,
     color: colors.text.secondary,
-    fontWeight: '500',
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 14,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: '45%',
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: colors.text.secondary,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E8E8E8',
+    marginBottom: 14,
   },
   requestFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
   },
   requestUser: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     flex: 1,
+  },
+  avatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary.main,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   userInfo: {
     flex: 1,
@@ -926,92 +625,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.text.primary,
-    marginBottom: 2,
   },
-  userType: {
-    fontSize: 11,
-    color: colors.text.secondary,
-  },
-  applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary.main,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  applyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  skillCard: {
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    overflow: 'hidden',
-    elevation: 0,
-  },
-  skillHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  skillTitleContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  skillStats: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  tagChip: {
-    height: 28,
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  tagChipText: {
-    fontSize: 11,
-    color: colors.text.secondary,
-    fontWeight: '500',
-  },
-  userNameContainer: {
+  verifiedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: 2,
   },
-  verifiedIcon: {
-    marginLeft: 4,
+  verifiedText: {
+    fontSize: 11,
+    color: colors.text.secondary,
   },
-  contactButton: {
+  viewDetailsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.primary.main,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 6,
   },
-  contactButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  viewDetailsBtnText: {
+    fontSize: 13,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 

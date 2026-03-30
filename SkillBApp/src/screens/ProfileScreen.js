@@ -9,7 +9,13 @@ import { colors } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-const ProfileScreen = ({ navigation, onNavigateToEditProfile, onNavigateToSettings, onNavigateToNotifications }) => {
+const ProfileScreen = ({ 
+  navigation, 
+  onNavigateToEditProfile, 
+  onNavigateToSettings, 
+  onNavigateToNotifications,
+  onNavigateToPublicProfile,
+}) => {
   const { user, profile: contextProfile, logout, updateProfile } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -63,24 +69,43 @@ const ProfileScreen = ({ navigation, onNavigateToEditProfile, onNavigateToSettin
 
   const handleViewPublicProfile = () => {
     // Navigate to public profile view
-    if (navigation?.navigate) {
+    if (onNavigateToPublicProfile) {
+      onNavigateToPublicProfile(user?.id);
+    } else if (navigation?.navigate) {
       navigation.navigate('PublicProfile', { userId: user?.id });
+    } else {
+      Alert.alert('Info', 'Public profile view is available when others view your profile.');
     }
   };
 
   const handleShareProfile = async () => {
     try {
-      const shareUrl = `skillbridge://profile/${user?.id}`;
       const displayName = getDisplayName();
-      const message = `Check out my profile on SkillBridge!\n\n${displayName}\n${shareUrl}`;
+      // Use a web URL that can be opened on any device
+      const webUrl = `https://skillbridge.app/profile/${user?.id}`;
+      const deepLink = `skillbridge://profile/${user?.id}`;
       
-      await Share.share({
-        message,
+      const result = await Share.share({
+        message: `Check out my profile on SkillBridge!\n\n${displayName}\n\n${webUrl}`,
         title: `${displayName} - SkillBridge Profile`,
+        url: webUrl, // iOS will use this URL
       });
+      
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // Shared with specific activity type
+          console.log('Shared via:', result.activityType);
+        } else {
+          // Shared
+          console.log('Profile shared successfully');
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // Dismissed
+        console.log('Share dismissed');
+      }
     } catch (error) {
       console.error('Error sharing profile:', error);
-      Alert.alert('Error', 'Unable to share profile');
+      Alert.alert('Error', 'Unable to share profile. Please try again.');
     }
   };
 
