@@ -320,33 +320,31 @@ If Railway ignores this file, clear any **custom** Build/Start commands in the R
 
 ## 12. Exporting this guide to PDF
 
-This file is **`docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md`**.
+Source file: **`docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md`**.
 
-**Option A — VS Code / Cursor**
-
-1. Open the Markdown file.  
-2. Use a Markdown PDF extension, or **Print** → **Save as PDF**.
-
-**Option B — Pandoc (if installed)**
-
-```bash
-pandoc docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md -o SkillBridge-Deployment-Guide.pdf
-```
-
-**Option C — Browser**
-
-1. Push to GitHub and view the rendered Markdown on GitHub.  
-2. Print the page → Save as PDF.
-
-**Option D — Node (md-to-pdf)**
+**Recommended — regenerate HTML + PDF from the repo**
 
 From the repository root:
 
 ```bash
-npx --yes md-to-pdf docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md
+npm install
+npm run docs:deployment-html
 ```
 
-This may create `docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.pdf` in the same folder (tool-dependent).
+This writes **`docs/SkillBridge-Deployment-Guide.html`** (open in Chrome/Edge → **Ctrl+P** → **Save as PDF**).
+
+If you have **Microsoft Edge** installed, you can also generate a PDF from the command line (Windows):
+
+```powershell
+& "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" --headless --disable-gpu --print-to-pdf="docs\SkillBridge-Deployment-Guide.pdf" "file:///C:/path/to/repo/docs/SkillBridge-Deployment-Guide.html"
+```
+
+The repository may include a pre-built **`docs/SkillBridge-Deployment-Guide.pdf`** for convenience; re-run the steps above after editing the Markdown.
+
+**Other options**
+
+- **Pandoc:** `pandoc docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md -o SkillBridge-Deployment-Guide.pdf` (if Pandoc is installed).  
+- **VS Code / Cursor:** Open the `.md` or `.html` → Print → Save as PDF.
 
 ---
 

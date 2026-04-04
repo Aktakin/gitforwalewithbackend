@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SkillBridge — Deployment Guide</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; max-width: 720px; margin: 24px auto; padding: 0 16px 48px; line-height: 1.55; color: #111; }
+  h1 { font-size: 1.75rem; border-bottom: 2px solid #1E90FF; padding-bottom: 0.25em; }
+  h2 { font-size: 1.35rem; margin-top: 1.75em; page-break-after: avoid; }
+  h3 { font-size: 1.1rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.9rem; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  code { background: #f0f0f0; padding: 0.1em 0.35em; font-size: 0.9em; }
+  pre { background: #f5f5f5; padding: 12px; overflow-x: auto; font-size: 0.85rem; }
+  pre code { background: none; padding: 0; }
+  ul, ol { padding-left: 1.35em; }
+  a { color: #0066cc; word-break: break-all; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
+  @media print {
+    body { margin: 12mm 15mm; max-width: none; }
+    h1, h2, h3 { page-break-after: avoid; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<h1>SkillBridge — Full Deployment Guide</h1>
+<p><strong>Frontend (Vercel) · Payments API (Railway) · Data &amp; Auth (Supabase) · Stripe</strong></p>
+<p>This document explains how to deploy the SkillBridge web application, host the Stripe payment backend, and manage environment variables when working in a team. <strong>Secrets never belong in Git.</strong></p>
+<hr>
+<h2>Table of contents</h2>
+<ol>
+<li><a href="#1-architecture-overview">Architecture overview</a>  </li>
+<li><a href="#2-git-env-and-collaborating-safely">Git, <code>.env</code>, and collaborating safely</a>  </li>
+<li><a href="#3-environment-variables-reference">Environment variables reference</a>  </li>
+<li><a href="#4-deploy-the-payment-api-on-railway">Deploy the payment API on Railway</a>  </li>
+<li><a href="#5-deploy-the-frontend-on-vercel">Deploy the frontend on Vercel</a>  </li>
+<li><a href="#6-supabase-setup-reminder">Supabase setup (reminder)</a>  </li>
+<li><a href="#7-connecting-all-three-systems">Connecting all three systems</a>  </li>
+<li><a href="#8-local-development">Local development</a>  </li>
+<li><a href="#9-test-mode-vs-live-mode">Test mode vs live mode</a>  </li>
+<li><a href="#10-the-railwaytoml-file">The <code>railway.toml</code> file</a>  </li>
+<li><a href="#11-troubleshooting">Troubleshooting</a>  </li>
+<li><a href="#12-exporting-this-guide-to-pdf">Exporting this guide to PDF</a></li>
+</ol>
+<hr>
+<h2>1. Architecture overview</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Role</th>
+<th>Typical host</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>React app</strong></td>
+<td>User interface, Stripe.js in the browser</td>
+<td><strong>Vercel</strong></td>
+</tr>
+<tr>
+<td><strong>Supabase</strong></td>
+<td>Database, authentication, app data</td>
+<td><strong>Supabase Cloud</strong> (managed)</td>
+</tr>
+<tr>
+<td><strong>Payment API</strong></td>
+<td>Holds <code>STRIPE_SECRET_KEY</code>, creates PaymentIntents, CORS for your frontend</td>
+<td><strong>Railway</strong> (Node process)</td>
+</tr>
+<tr>
+<td><strong>Stripe</strong></td>
+<td>Card processing, dashboards, webhooks (optional later)</td>
+<td><strong>Stripe</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Flow (simplified):</strong></p>
+<ol>
+<li>User opens the app from <strong>Vercel</strong>.  </li>
+<li>The app uses <strong>Supabase</strong> (URL + anon key) for login and data.  </li>
+<li>When paying, the browser calls <strong>your Railway URL</strong> (<code>/api/payments/...</code>).  </li>
+<li>Railway uses <strong>Stripe secret key</strong> to talk to Stripe and returns JSON (e.g. <code>clientSecret</code>).  </li>
+<li>Stripe Elements on the frontend completes the payment with Stripe.</li>
+</ol>
+<p><strong>Important:</strong> The <strong>publishable</strong> key (<code>pk_...</code>) can be in the frontend. The <strong>secret</strong> key (<code>sk_...</code>) must <strong>only</strong> run on the server (Railway), never in the browser and never committed to Git.</p>
+<hr>
+<h2>2. Git, <code>.env</code>, and collaborating safely</h2>
+<h3>2.1 What must NOT be in Git</h3>
+<ul>
+<li><code>.env</code> (project root)  </li>
+<li><code>server/.env</code>  </li>
+<li><code>SkillBApp/.env</code>  </li>
+<li>Any file containing real <code>sk_live_</code>, <code>sk_test_</code>, Supabase <strong>service role</strong> keys, or database passwords</li>
+</ul>
+<p>These paths are listed in <code>.gitignore</code> on purpose.</p>
+<h3>2.2 What SHOULD be in Git</h3>
+<ul>
+<li><strong><code>.env.example</code></strong> — template for the React app variables (no real secrets).  </li>
+<li><strong><code>server/.env.example</code></strong> — template for the payment server (no real secrets).  </li>
+<li><strong><code>railway.toml</code></strong> — Railway build/start instructions (no secrets).  </li>
+<li>Application source code and <code>vercel.json</code> as needed.</li>
+</ul>
+<h3>2.3 What each teammate does after <code>git clone</code></h3>
+<ol>
+<li>Install dependencies: <code>npm install</code>  </li>
+<li>Copy templates:  <ul>
+<li>Copy <code>.env.example</code> → <code>.env</code>  </li>
+<li>Copy <code>server/.env.example</code> → <code>server/.env</code></li>
+</ul>
+</li>
+<li>Fill in <strong>local</strong> values (from Stripe dashboard, Supabase project settings, or a team password manager).  </li>
+<li><strong>Never</strong> <code>git add</code> or commit <code>.env</code> / <code>server/.env</code>.</li>
+</ol>
+<h3>2.4 What production uses instead of committed <code>.env</code></h3>
+<ul>
+<li><strong>Vercel:</strong> Project → <strong>Settings → Environment Variables</strong>  </li>
+<li><strong>Railway:</strong> Service → <strong>Variables</strong>  </li>
+<li><strong>Supabase:</strong> Keys come from the Supabase dashboard; only the <strong>anon</strong> key goes in the frontend.</li>
+</ul>
+<p>No deploy platform reads your private <code>.env</code> from Git for production secrets.</p>
+<hr>
+<h2>3. Environment variables reference</h2>
+<h3>3.1 Vercel (frontend — Create React App)</h3>
+<p>CRA bakes <code>REACT_APP_*</code> into the build at <strong>build time</strong>. If you change these, <strong>redeploy</strong> Vercel.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>REACT_APP_SUPABASE_URL</code></td>
+<td>Supabase project URL (Settings → API).</td>
+</tr>
+<tr>
+<td><code>REACT_APP_SUPABASE_ANON_KEY</code></td>
+<td>Supabase <strong>anon</strong> public key (not the service role key).</td>
+</tr>
+<tr>
+<td><code>REACT_APP_STRIPE_PUBLISHABLE_KEY</code></td>
+<td><code>pk_test_...</code> for testing, <code>pk_live_...</code> for production.</td>
+</tr>
+<tr>
+<td><code>REACT_APP_PAYMENT_API_URL</code></td>
+<td>Base URL for payment routes, <strong>must</strong> end with <code>/api/payments</code>. Example: <code>https://your-service.up.railway.app/api/payments</code></td>
+</tr>
+</tbody></table>
+<p><strong>No trailing slash</strong> after <code>payments</code> is required; the app appends <code>/create-intent</code>, etc.</p>
+<h3>3.2 Railway (payment API — <code>server/payment-api.js</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>STRIPE_SECRET_KEY</code></td>
+<td><code>sk_test_...</code> or <code>sk_live_...</code> from Stripe Dashboard → API keys. <strong>Required.</strong> Without it the process crashes on startup.</td>
+</tr>
+<tr>
+<td><code>PORT</code></td>
+<td>Often set automatically by Railway. The app uses <code>process.env.PORT || 3001</code>.</td>
+</tr>
+<tr>
+<td><code>ALLOWED_ORIGINS</code></td>
+<td>Comma-separated list of frontend origins, e.g. <code>https://your-app.vercel.app,https://your-preview.vercel.app</code></td>
+</tr>
+<tr>
+<td><code>STRIPE_CORS_STRICT</code></td>
+<td>Set to <code>1</code> to enforce CORS against <code>ALLOWED_ORIGINS</code> plus built-in dev origins. Recommended for production.</td>
+</tr>
+<tr>
+<td><code>HOST</code></td>
+<td>Optional; default binds to <code>0.0.0.0</code> in code for container compatibility.</td>
+</tr>
+</tbody></table>
+<h3>3.3 Local-only files (not in Git)</h3>
+<p><strong>Root <code>.env</code></strong> (for <code>npm start</code>): same names as Vercel <code>REACT_APP_*</code> where applicable.<br><strong><code>server/.env</code></strong>: <code>STRIPE_SECRET_KEY</code>, optional <code>PORT</code>, <code>ALLOWED_ORIGINS</code>.</p>
+<hr>
+<h2>4. Deploy the payment API on Railway</h2>
+<h3>4.1 Prerequisites</h3>
+<ul>
+<li>GitHub repository contains:  <ul>
+<li><code>server/payment-api.js</code>  </li>
+<li><code>package.json</code> with script <code>&quot;payment-api&quot;: &quot;node server/payment-api.js&quot;</code>  </li>
+<li><strong><code>railway.toml</code></strong> at the repository root (so Railway does <strong>not</strong> run <code>npm run build</code> for the React app).</li>
+</ul>
+</li>
+</ul>
+<h3>4.2 Create the Railway project</h3>
+<ol>
+<li>Go to <a href="https://railway.app">https://railway.app</a> and sign in.  </li>
+<li><strong>New Project</strong> → <strong>Deploy from GitHub</strong> → authorize and select your repository.  </li>
+<li>Railway creates a service linked to that repo.</li>
+</ol>
+<h3>4.3 How <code>railway.toml</code> helps</h3>
+<p>The file at the repo root tells Railway:</p>
+<ul>
+<li><strong>Build:</strong> <code>npm install</code> (installs dependencies including <code>express</code>, <code>stripe</code>, <code>cors</code>, <code>dotenv</code>).  </li>
+<li><strong>Start:</strong> <code>npm run payment-api</code> → runs <code>node server/payment-api.js</code>.  </li>
+<li><strong>Health check path:</strong> <code>/health</code> for monitoring.</li>
+</ul>
+<p>Without this, Railway might default to <code>npm run build</code>, which runs the React linter/build and <strong>fails</strong> on ESLint warnings in CI.</p>
+<h3>4.4 Set environment variables in Railway</h3>
+<ol>
+<li>Open your <strong>service</strong> → <strong>Variables</strong>.  </li>
+<li>Add at minimum:  <ul>
+<li><code>STRIPE_SECRET_KEY</code> = your Stripe secret key.</li>
+</ul>
+</li>
+<li>For production-style CORS:  <ul>
+<li><code>ALLOWED_ORIGINS</code> = <code>https://your-production-app.vercel.app</code>  </li>
+<li><code>STRIPE_CORS_STRICT</code> = <code>1</code></li>
+</ul>
+</li>
+<li>Save; Railway redeploys or trigger <strong>Redeploy</strong> manually.</li>
+</ol>
+<h3>4.5 Public URL and health check</h3>
+<ol>
+<li><strong>Settings</strong> → <strong>Networking</strong> → <strong>Generate Domain</strong> (if not already).  </li>
+<li>Note the HTTPS URL, e.g. <code>https://skillbridge-payment-production.up.railway.app</code>.  </li>
+<li>Open in a browser:<br><code>https://&lt;your-railway-host&gt;/health</code><br>Expected JSON: <code>{&quot;status&quot;:&quot;ok&quot;,&quot;provider&quot;:&quot;stripe&quot;}</code>.</li>
+</ol>
+<h3>4.6 Verify payment routes exist</h3>
+<p>Base path for the Express app: <strong><code>/api/payments</code></strong>.<br>Examples:</p>
+<ul>
+<li><code>POST /api/payments/create-intent</code>  </li>
+<li><code>POST /api/payments/confirm-intent</code>  </li>
+<li><code>GET /api/payments/status/:paymentIntentId</code></li>
+</ul>
+<p>The frontend uses <code>REACT_APP_PAYMENT_API_URL</code> pointing to the <strong>base</strong> <code>.../api/payments</code>.</p>
+<hr>
+<h2>5. Deploy the frontend on Vercel</h2>
+<h3>5.1 Import project</h3>
+<ol>
+<li>Go to <a href="https://vercel.com">https://vercel.com</a> → <strong>Add New</strong> → <strong>Project</strong>.  </li>
+<li>Import the <strong>same</strong> Git repository.  </li>
+<li>Framework preset: <strong>Create React App</strong> (or auto-detected).  </li>
+<li><strong>Build Command:</strong> <code>npm run build</code>  </li>
+<li><strong>Output Directory:</strong> <code>build</code></li>
+</ol>
+<h3>5.2 Environment variables</h3>
+<p>In <strong>Project → Settings → Environment Variables</strong>, add (for <strong>Production</strong> and optionally <strong>Preview</strong>):</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>REACT_APP_SUPABASE_URL</code></td>
+<td>From Supabase dashboard</td>
+</tr>
+<tr>
+<td><code>REACT_APP_SUPABASE_ANON_KEY</code></td>
+<td>Supabase anon key</td>
+</tr>
+<tr>
+<td><code>REACT_APP_STRIPE_PUBLISHABLE_KEY</code></td>
+<td><code>pk_test_...</code> or <code>pk_live_...</code></td>
+</tr>
+<tr>
+<td><code>REACT_APP_PAYMENT_API_URL</code></td>
+<td><code>https://&lt;railway-host&gt;/api/payments</code></td>
+</tr>
+</tbody></table>
+<h3>5.3 Deploy and rebuild rule</h3>
+<p>Click <strong>Deploy</strong>. After <strong>any</strong> change to <code>REACT_APP_*</code>, trigger a <strong>new deployment</strong> so the bundle is rebuilt with the new values.</p>
+<h3>5.4 <code>vercel.json</code> (if present)</h3>
+<p>Your repo may include <code>vercel.json</code> with SPA rewrites so client-side routes work. No Stripe secrets belong there.</p>
+<hr>
+<h2>6. Supabase setup (reminder)</h2>
+<ol>
+<li>Create a project at <a href="https://supabase.com">https://supabase.com</a>.  </li>
+<li><strong>Project Settings → API</strong>: copy <strong>Project URL</strong> and <strong>anon public</strong> key.  </li>
+<li>Put those two into Vercel env vars and local <code>.env</code> as <code>REACT_APP_SUPABASE_URL</code> and <code>REACT_APP_SUPABASE_ANON_KEY</code>.  </li>
+<li>Run SQL migrations / table setup from your repo docs as needed (separate from this guide).</li>
+</ol>
+<hr>
+<h2>7. Connecting all three systems</h2>
+<p><strong>Checklist:</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> Railway <code>/health</code> returns OK.  </li>
+<li><input disabled="" type="checkbox"> Vercel <code>REACT_APP_PAYMENT_API_URL</code> exactly matches <code>https://&lt;railway&gt;/api/payments</code>.  </li>
+<li><input disabled="" type="checkbox"> Stripe test <strong>publishable</strong> on Vercel matches test <strong>secret</strong> on Railway (both test mode).  </li>
+<li><input disabled="" type="checkbox"> <code>ALLOWED_ORIGINS</code> on Railway includes your exact Vercel URL (<code>https://...</code>, no typo).  </li>
+<li><input disabled="" type="checkbox"> Supabase URL and anon key on Vercel match your Supabase project.</li>
+</ul>
+<p><strong>Data flow:</strong></p>
+<pre><code>Browser (Vercel-hosted app)
+  → Supabase (auth + DB)
+  → HTTPS → Railway /api/payments/*
+       → Stripe API (secret key on Railway only)
+</code></pre>
+<hr>
+<h2>8. Local development</h2>
+<h3>8.1 One-time setup</h3>
+<pre><code class="language-bash">npm install
+copy .env.example .env
+copy server\.env.example server\.env
+</code></pre>
+<p>Edit <code>.env</code> and <code>server/.env</code> with real test keys.</p>
+<h3>8.2 Two terminals</h3>
+<p><strong>Terminal A — payment API</strong></p>
+<pre><code class="language-bash">npm run payment-api
+</code></pre>
+<p><strong>Terminal B — React app</strong></p>
+<pre><code class="language-bash">npm start
+</code></pre>
+<h3>8.3 Local payment URL</h3>
+<p>Typically:</p>
+<ul>
+<li><code>REACT_APP_PAYMENT_API_URL=http://localhost:3001/api/payments</code></li>
+</ul>
+<p>in root <code>.env</code>, or rely on project defaults documented in <code>stripeService.js</code> for development.</p>
+<h3>8.4 Test card</h3>
+<p>Use Stripe test card <code>4242 4242 4242 4242</code>, any future expiry, any CVC, in <strong>test</strong> mode.</p>
+<hr>
+<h2>9. Test mode vs live mode</h2>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Publishable key</th>
+<th>Secret key</th>
+<th>Cards</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Test</strong></td>
+<td><code>pk_test_...</code></td>
+<td><code>sk_test_...</code></td>
+<td>Test card numbers only</td>
+</tr>
+<tr>
+<td><strong>Live</strong></td>
+<td><code>pk_live_...</code></td>
+<td><code>sk_live_...</code></td>
+<td>Real cards; real money</td>
+</tr>
+</tbody></table>
+<p>Update <strong>both</strong> Vercel and Railway together when switching modes. Redeploy both after changing keys.</p>
+<hr>
+<h2>10. The <code>railway.toml</code> file</h2>
+<p><strong>Location:</strong> repository root: <code>railway.toml</code></p>
+<p><strong>Purpose:</strong> Tell Railway how to build and start <strong>only</strong> the payment server, avoiding <code>npm run build</code> for the CRA app on the same repo.</p>
+<p><strong>Typical contents:</strong></p>
+<pre><code class="language-toml">[build]
+builder = &quot;NIXPACKS&quot;
+buildCommand = &quot;npm install&quot;
+
+[deploy]
+startCommand = &quot;npm run payment-api&quot;
+healthcheckPath = &quot;/health&quot;
+restartPolicyType = &quot;ON_FAILURE&quot;
+restartPolicyMaxRetries = 10
+</code></pre>
+<p>If Railway ignores this file, clear any <strong>custom</strong> Build/Start commands in the Railway UI so the file takes effect, then <strong>Redeploy</strong>.</p>
+<hr>
+<h2>11. Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Neither apiKey nor config.authenticator provided</code></td>
+<td>Missing <code>STRIPE_SECRET_KEY</code> on Railway or in <code>server/.env</code> locally</td>
+<td>Set variable and restart / redeploy</td>
+</tr>
+<tr>
+<td>CORS error in browser</td>
+<td>Frontend origin not allowed</td>
+<td>Add Vercel URL to <code>ALLOWED_ORIGINS</code>; set <code>STRIPE_CORS_STRICT=1</code> only after origins are correct</td>
+</tr>
+<tr>
+<td><code>Unexpected token &#39;&lt;&#39;</code> / HTML instead of JSON</td>
+<td>Wrong <code>REACT_APP_PAYMENT_API_URL</code> or API down</td>
+<td>Fix URL to <code>https://.../api/payments</code>; check <code>/health</code></td>
+</tr>
+<tr>
+<td>Build fails on Railway with <code>npm run build</code></td>
+<td><code>railway.toml</code> not used or overridden</td>
+<td>Remove custom build command in UI; ensure <code>railway.toml</code> is on <code>main</code></td>
+</tr>
+<tr>
+<td>Payments work locally but not on Vercel</td>
+<td><code>REACT_APP_PAYMENT_API_URL</code> still localhost or missing</td>
+<td>Set production URL in Vercel and <strong>redeploy</strong></td>
+</tr>
+<tr>
+<td>ESLint / <code>no-unused-vars</code> fails CI</td>
+<td>Full CRA build running on Railway</td>
+<td>Use <code>railway.toml</code> as above</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>12. Exporting this guide to PDF</h2>
+<p>Source file: <strong><code>docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md</code></strong>.</p>
+<p><strong>Recommended — regenerate HTML + PDF from the repo</strong></p>
+<p>From the repository root:</p>
+<pre><code class="language-bash">npm install
+npm run docs:deployment-html
+</code></pre>
+<p>This writes <strong><code>docs/SkillBridge-Deployment-Guide.html</code></strong> (open in Chrome/Edge → <strong>Ctrl+P</strong> → <strong>Save as PDF</strong>).</p>
+<p>If you have <strong>Microsoft Edge</strong> installed, you can also generate a PDF from the command line (Windows):</p>
+<pre><code class="language-powershell">&amp; &quot;${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe&quot; --headless --disable-gpu --print-to-pdf=&quot;docs\SkillBridge-Deployment-Guide.pdf&quot; &quot;file:///C:/path/to/repo/docs/SkillBridge-Deployment-Guide.html&quot;
+</code></pre>
+<p>The repository may include a pre-built <strong><code>docs/SkillBridge-Deployment-Guide.pdf</code></strong> for convenience; re-run the steps above after editing the Markdown.</p>
+<p><strong>Other options</strong></p>
+<ul>
+<li><strong>Pandoc:</strong> <code>pandoc docs/SKILLBRIDGE_DEPLOYMENT_GUIDE.md -o SkillBridge-Deployment-Guide.pdf</code> (if Pandoc is installed).  </li>
+<li><strong>VS Code / Cursor:</strong> Open the <code>.md</code> or <code>.html</code> → Print → Save as PDF.</li>
+</ul>
+<hr>
+<h2>Document control</h2>
+<ul>
+<li><strong>Audience:</strong> developers and deployers of SkillBridge.  </li>
+<li><strong>Secrets:</strong> never embed real keys in this document; use Stripe and Supabase dashboards.  </li>
+<li><strong>Updates:</strong> when adding new <code>REACT_APP_*</code> or server env vars, update <code>.env.example</code> / <code>server/.env.example</code> and this guide.</li>
+</ul>
+<hr>
+<p><em>End of SkillBridge Deployment Guide</em></p>
+
+<hr/>
+<p style="font-size:0.95rem;color:#333"><strong>Create a PDF:</strong> Press <kbd>Ctrl+P</kbd> (Windows) or <kbd>Cmd+P</kbd> (Mac) → choose <em>Save as PDF</em> or <em>Microsoft Print to PDF</em> → Save.</p>
+</body>
+</html>

@@ -39,7 +39,8 @@
     "deploy:netlify": "npm run build && npx netlify deploy --prod --dir=build",
     "deploy:vercel": "npm run build && npx vercel --prod",
     "deploy:surge": "npm run build && npx surge build/ skillbridge-app.surge.sh",
-    "create-cv": "node create-cv-and-merge.js"
+    "create-cv": "node create-cv-and-merge.js",
+    "docs:deployment-html": "node scripts/build-deployment-html.mjs"
   },
   "eslintConfig": {
     "extends": [
@@ -61,6 +62,7 @@
   },
   "devDependencies": {
     "http-proxy-middleware": "^2.0.9",
+    "marked": "^15.0.7",
     "serve": "^14.2.4"
   }
 }
