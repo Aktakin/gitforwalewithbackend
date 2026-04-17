@@ -1,6 +1,13 @@
 node_modules/
 .expo/
 .expo-shared/
+
+# EAS / build artifacts
+dist/
+android/
+ios/build/
+play-service-account.json
+
 *.jks
 *.p8
 *.p12

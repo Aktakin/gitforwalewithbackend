@@ -15,6 +15,14 @@ const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 // Backend API endpoint for payment operations
 const PAYMENT_API_URL = process.env.EXPO_PUBLIC_PAYMENT_API_URL || 'http://localhost:3001/api/payments';
 
+// Production sanity check — localhost is unreachable from a store-released app
+if (!__DEV__ && PAYMENT_API_URL.includes('localhost')) {
+  console.error(
+    'EXPO_PUBLIC_PAYMENT_API_URL points to localhost in a production build. ' +
+      'Set it to your deployed HTTPS payment API (e.g. https://your-service.up.railway.app/api/payments) before building for stores.'
+  );
+}
+
 /**
  * Initialize Stripe for React Native
  */
