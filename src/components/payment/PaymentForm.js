@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Box,
   Button,
-  TextField,
   Typography,
   Alert,
   CircularProgress,
@@ -41,7 +40,7 @@ const PaymentForm = ({ paymentId, amount, onSuccess }) => {
       const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}/payment/${paymentId}/success`,
+          return_url: `${window.location.origin}/payment/${paymentId}`,
         },
         redirect: 'if_required',
       });
@@ -112,7 +111,5 @@ const PaymentForm = ({ paymentId, amount, onSuccess }) => {
 };
 
 export default PaymentForm;
-
-
 
 
