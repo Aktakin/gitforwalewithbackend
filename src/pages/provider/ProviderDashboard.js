@@ -119,7 +119,7 @@ const ProviderDashboard = () => {
     if (!selectedOrderForClose) return;
 
     try {
-      const newStatus = closeProjectAction === 'complete' ? 'completed' : 'canceled';
+      const newStatus = closeProjectAction === 'complete' ? 'in_review' : 'canceled';
       
       // Update request status
       if (selectedOrderForClose.requestId) {
@@ -132,25 +132,9 @@ const ProviderDashboard = () => {
           .eq('id', selectedOrderForClose.requestId);
       }
 
-      // Update proposal status
-      // Note: If constraint doesn't allow 'completed', we'll keep proposal as 'accepted'
-      // and only update the request status to 'completed'
+      // Keep accepted proposals accepted until the customer approves completion.
       if (selectedOrderForClose.proposalId) {
-        if (newStatus === 'completed') {
-          // Try to set proposal to 'completed', but if it fails, keep it as 'accepted'
-          // The request status change is what matters for filtering
-          try {
-            console.log('[ProviderDashboard] Attempting to update proposal status to completed');
-            await db.proposals.update(selectedOrderForClose.proposalId, { 
-              status: 'completed'
-            });
-            console.log('[ProviderDashboard] Proposal status updated to completed');
-          } catch (proposalError) {
-            console.warn('[ProviderDashboard] Could not update proposal to completed, keeping as accepted:', proposalError.message);
-            // Don't throw - the request status update is more important
-            // The proposal will stay as 'accepted' but request will be 'completed'
-          }
-        } else {
+        if (newStatus !== 'in_review') {
           // For canceled projects, set proposal to rejected
           try {
             await db.proposals.update(selectedOrderForClose.proposalId, { 
@@ -187,7 +171,7 @@ const ProviderDashboard = () => {
           service: transformedRequest?.title || 'Service',
           status: transformedRequest?.status === 'completed' ? 'Completed' : 
                  transformedRequest?.status === 'canceled' ? 'Canceled' :
-                 transformedRequest?.status === 'in_review' ? 'In Progress' : 
+                 transformedRequest?.status === 'in_review' ? 'Waiting Approval' :
                  transformedRequest?.status === 'open' ? 'In Progress' : 'In Progress',
           amount: proposal.proposedPrice || 0,
           deadline: transformedRequest?.deadline ? transformedRequest.deadline.toISOString().split('T')[0] : null,
@@ -205,7 +189,9 @@ const ProviderDashboard = () => {
       
       // Update stats
       const completedOrders = validOrders.filter(o => o.status === 'Completed').length;
-      const activeOrders = validOrders.filter(o => o.status === 'In Progress').length;
+      const activeOrders = validOrders.filter(
+        (o) => o.status === 'In Progress' || o.status === 'Waiting Approval'
+      ).length;
       const totalEarnings = validOrders
         .filter(o => o.status === 'Completed')
         .reduce((sum, o) => sum + (o.amount || 0), 0);
@@ -223,7 +209,11 @@ const ProviderDashboard = () => {
       setCloseProjectAction(null);
       setCloseProjectReason('');
       
-      alert(`Project ${closeProjectAction === 'complete' ? 'completed' : 'canceled'} successfully!`);
+      alert(
+        closeProjectAction === 'complete'
+          ? 'Work marked as delivered. The customer must approve completion before payment is released.'
+          : 'Project canceled successfully!'
+      );
     } catch (error) {
       console.error('Error closing project:', error);
       alert(`Failed to ${closeProjectAction} project: ${error.message}`);
@@ -262,7 +252,7 @@ const ProviderDashboard = () => {
             service: transformedRequest?.title || 'Service',
             status: transformedRequest?.status === 'completed' ? 'Completed' : 
                    transformedRequest?.status === 'canceled' ? 'Canceled' :
-                   transformedRequest?.status === 'in_review' ? 'In Progress' : 
+                   transformedRequest?.status === 'in_review' ? 'Waiting Approval' :
                    transformedRequest?.status === 'open' ? 'In Progress' : 'In Progress',
             amount: proposal.proposedPrice || 0,
             deadline: transformedRequest?.deadline ? transformedRequest.deadline.toISOString().split('T')[0] : null,
@@ -286,7 +276,13 @@ const ProviderDashboard = () => {
         const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         
         const completedOrders = validOrders.filter(o => o.status === 'Completed' || o.status === 'completed');
-        const activeOrders = validOrders.filter(o => o.status === 'In Progress' || o.status === 'in_progress' || o.status === 'Waiting');
+        const activeOrders = validOrders.filter(
+          (o) =>
+            o.status === 'In Progress' ||
+            o.status === 'in_progress' ||
+            o.status === 'Waiting' ||
+            o.status === 'Waiting Approval'
+        );
         
         const totalEarnings = completedOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
         const thisMonthEarnings = completedOrders
@@ -508,6 +504,7 @@ const ProviderDashboard = () => {
       case 'Completed':
       case 'completed': return 'success';
       case 'Waiting': return 'warning';
+      case 'Waiting Approval': return 'warning';
       case 'Canceled':
       case 'canceled': return 'error';
       default: return 'default';
@@ -1085,9 +1082,9 @@ const ProviderDashboard = () => {
                                     </IconButton>
                                   </Tooltip>
                                 )}
-                                {(order.status === 'In Progress' || order.status === 'Waiting') && (
+                                {order.status === 'In Progress' && (
                                   <>
-                                    <Tooltip title="Mark as Completed">
+                                    <Tooltip title="Submit for Approval">
                                       <IconButton 
                                         size="small" 
                                         color="success"
@@ -1478,7 +1475,7 @@ const ProviderDashboard = () => {
         fullWidth
       >
         <DialogTitle>
-          {closeProjectAction === 'complete' ? 'Complete Project' : 'Cancel Project'}
+          {closeProjectAction === 'complete' ? 'Submit Work for Approval' : 'Cancel Project'}
         </DialogTitle>
         <DialogContent>
           {selectedOrderForClose && (
@@ -1488,21 +1485,21 @@ const ProviderDashboard = () => {
                 sx={{ mb: 2 }}
               >
                 {closeProjectAction === 'complete' 
-                  ? `Are you sure you want to mark "${selectedOrderForClose.service}" as completed?`
+                  ? `Mark "${selectedOrderForClose.service}" as delivered for customer approval? Payment will stay in escrow until the customer approves completion.`
                   : `Are you sure you want to cancel "${selectedOrderForClose.service}"? This action cannot be undone.`
                 }
               </Alert>
               
               <TextField
                 fullWidth
-                label={closeProjectAction === 'complete' ? 'Completion Notes (Optional)' : 'Cancellation Reason (Optional)'}
+                label={closeProjectAction === 'complete' ? 'Delivery Notes (Optional)' : 'Cancellation Reason (Optional)'}
                 multiline
                 rows={3}
                 value={closeProjectReason}
                 onChange={(e) => setCloseProjectReason(e.target.value)}
                 placeholder={
                   closeProjectAction === 'complete' 
-                    ? 'Add any notes about the completed project...'
+                    ? 'Add any notes for the customer before they review the work...'
                     : 'Please provide a reason for canceling this project...'
                 }
                 sx={{ mt: 2 }}
@@ -1524,7 +1521,7 @@ const ProviderDashboard = () => {
             color={closeProjectAction === 'complete' ? 'success' : 'error'}
             onClick={confirmCloseProject}
           >
-            {closeProjectAction === 'complete' ? 'Mark as Completed' : 'Cancel Project'}
+            {closeProjectAction === 'complete' ? 'Submit for Approval' : 'Cancel Project'}
           </Button>
         </DialogActions>
       </Dialog>

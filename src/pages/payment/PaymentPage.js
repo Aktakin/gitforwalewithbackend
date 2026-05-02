@@ -117,7 +117,6 @@ const PaymentPage = () => {
   const [syncingRedirect, setSyncingRedirect] = useState(false);
   const [error, setError] = useState(null);
   const [actionMessage, setActionMessage] = useState(null);
-  const [releasing, setReleasing] = useState(false);
 
   const loadPayment = async () => {
     try {
@@ -179,21 +178,6 @@ const PaymentPage = () => {
     reconcileRedirect();
   }, [location.search, navigate, payment, paymentId]);
 
-  const handleReleaseEscrow = async () => {
-    try {
-      setReleasing(true);
-      setError(null);
-      await paymentService.releaseEscrow(paymentId, user.id);
-      setActionMessage('Funds released successfully.');
-      await loadPayment();
-    } catch (releaseError) {
-      console.error('Error releasing escrow:', releaseError);
-      setError(releaseError.message || 'Failed to release escrow.');
-    } finally {
-      setReleasing(false);
-    }
-  };
-
   if (loading || syncingRedirect) {
     return (
       <Container maxWidth="md" sx={{ py: 6, textAlign: 'center' }}>
@@ -221,7 +205,6 @@ const PaymentPage = () => {
   const status = payment.status || 'pending';
   const clientSecret = payment.metadata?.clientSecret || '';
   const canPay = isPayer && status === 'pending';
-  const canRelease = isPayer && status === 'held';
   const settled = ['held', 'released', 'paid', 'succeeded'].includes(status);
   const activeStep = status === 'released' ? 3 : settled ? 2 : 0;
   const steps = [
@@ -399,18 +382,13 @@ const PaymentPage = () => {
               </Typography>
             </Box>
             <Typography variant="body1" sx={{ mb: 2 }}>
-              Funds are being held securely until the client approves release to the provider.
+              Funds are being held securely in escrow until the customer approves the finished work from the dashboard.
             </Typography>
-            {canRelease && (
-              <Button
-                variant="contained"
-                color="success"
-                onClick={handleReleaseEscrow}
-                disabled={releasing}
-              >
-                {releasing ? 'Releasing Funds...' : 'Release Funds'}
-              </Button>
-            )}
+            <Alert severity="info">
+              {isPayer
+                ? 'Approve the completed job from your client dashboard to release payment to the provider.'
+                : 'Payment will be released after the customer approves the completed job.'}
+            </Alert>
           </CardContent>
         </Card>
       )}

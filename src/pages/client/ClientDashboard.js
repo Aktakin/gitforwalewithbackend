@@ -137,28 +137,6 @@ const ClientDashboard = () => {
               status: 'completed'
             });
             console.log('[ClientDashboard] Proposal status updated to completed');
-            
-            // Release escrow funds to provider when project is completed
-            try {
-              const { data: payment, error: paymentError } = await db.supabase
-                .from('payments')
-                .select('id, status, is_escrow')
-                .eq('proposal_id', selectedOrder.proposalId)
-                .eq('status', 'held')
-                .maybeSingle();
-              
-              if (!paymentError && payment && payment.is_escrow && payment.status === 'held') {
-                console.log('[ClientDashboard] Releasing escrow funds for payment:', payment.id);
-                await paymentService.releaseEscrow(payment.id, user.id);
-                console.log('[ClientDashboard] Escrow funds released successfully to provider');
-              } else if (paymentError) {
-                console.warn('[ClientDashboard] Could not find payment for proposal:', paymentError);
-              }
-            } catch (escrowError) {
-              console.error('[ClientDashboard] Error releasing escrow funds:', escrowError);
-              // Don't fail the completion if escrow release fails
-              // Funds can be released manually later
-            }
           } catch (proposalError) {
             console.warn('[ClientDashboard] Could not update proposal to completed, keeping as accepted:', proposalError.message);
             // Don't throw - the request status update is more important
@@ -173,6 +151,28 @@ const ClientDashboard = () => {
           } catch (proposalError) {
             console.warn('[ClientDashboard] Could not update proposal to rejected:', proposalError.message);
           }
+        }
+      }
+
+      if (newStatus === 'completed' && selectedOrder.proposalId) {
+        try {
+          const { data: payment, error: paymentError } = await db.supabase
+            .from('payments')
+            .select('id, status, is_escrow')
+            .eq('proposal_id', selectedOrder.proposalId)
+            .eq('status', 'held')
+            .maybeSingle();
+
+          if (paymentError) {
+            console.warn('[ClientDashboard] Could not find escrow payment for proposal:', paymentError);
+          } else if (payment?.is_escrow && payment.status === 'held') {
+            console.log('[ClientDashboard] Releasing escrow funds for payment:', payment.id);
+            await paymentService.releaseEscrow(payment.id, user.id);
+            console.log('[ClientDashboard] Escrow funds released successfully to provider');
+          }
+        } catch (escrowError) {
+          console.error('[ClientDashboard] Error releasing escrow funds:', escrowError);
+          throw new Error(`Work was marked complete, but escrow release failed: ${escrowError.message}`);
         }
       }
 
@@ -214,12 +214,13 @@ const ClientDashboard = () => {
                   return 'completed';
                 } else if (request.status === 'canceled') {
                   return 'canceled';
+                } else if (request.status === 'in_review') {
+                  return 'delivered';
                 } else {
-                  // All other statuses are in_progress
                   return 'in_progress';
                 }
               })(),
-              progress: request.status === 'completed' ? 100 : 
+              progress: request.status === 'completed' ? 100 :
                        request.status === 'canceled' ? 0 :
                        request.status === 'in_review' ? 75 : 50,
               orderDate: request.createdAt ? request.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -275,7 +276,11 @@ const ClientDashboard = () => {
         }, 300);
       }
       
-      alert(`Project ${wasCompleted ? 'completed' : 'canceled'} successfully! ${wasCompleted ? 'Switching to Completed tab...' : ''}`);
+      alert(
+        wasCompleted
+          ? 'Project approved successfully. Payment has been released to the provider. Switching to Completed tab...'
+          : 'Project canceled successfully!'
+      );
     } catch (error) {
       console.error('Error closing project:', error);
       alert(`Failed to ${closeProjectAction} project: ${error.message}`);
@@ -325,18 +330,20 @@ const ClientDashboard = () => {
                 },
                 package: 'Standard',
                 price: proposal.proposedPrice || 0,
-                status: (() => {
-                  // Explicitly check for completed status
-                  if (request.status === 'completed') {
-                    return 'completed';
-                  } else if (request.status === 'canceled') {
-                    return 'canceled';
-                  } else {
-                    // All other statuses are in_progress
-                    return 'in_progress';
-                  }
-                })(),
-                progress: request.status === 'completed' ? 100 : 
+              status: (() => {
+                // Explicitly check for completed status
+                if (request.status === 'completed') {
+                  return 'completed';
+                } else if (request.status === 'canceled') {
+                  return 'canceled';
+                } else if (request.status === 'in_review') {
+                  return 'delivered';
+                } else {
+                  return 'in_progress';
+                }
+              })(),
+                progress: request.status === 'completed' ? 100 :
+                         request.status === 'canceled' ? 0 :
                          request.status === 'in_review' ? 75 : 50,
                 orderDate: request.createdAt ? request.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
                 expectedDelivery: request.deadline ? request.deadline.toISOString().split('T')[0] : null,
@@ -504,15 +511,6 @@ const ClientDashboard = () => {
                 <>
                   <Button 
                     size="small" 
-                    variant="contained"
-                    color="success"
-                    startIcon={<CheckCircle />}
-                    onClick={() => handleCloseProject(order, 'complete')}
-                  >
-                    Complete
-                  </Button>
-                  <Button 
-                    size="small" 
                     variant="outlined"
                     color="error"
                     startIcon={<Cancel />}
@@ -521,6 +519,17 @@ const ClientDashboard = () => {
                     Cancel
                   </Button>
                 </>
+              )}
+              {order.status === 'delivered' && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="success"
+                  startIcon={<CheckCircle />}
+                  onClick={() => handleCloseProject(order, 'complete')}
+                >
+                  Approve & Release Payment
+                </Button>
               )}
               {order.status === 'delivered' && !order.rating && (
                 <Button 
@@ -1218,7 +1227,7 @@ const ClientDashboard = () => {
         fullWidth
       >
         <DialogTitle>
-          {closeProjectAction === 'complete' ? 'Complete Project' : 'Cancel Project'}
+          {closeProjectAction === 'complete' ? 'Approve Completed Work' : 'Cancel Project'}
         </DialogTitle>
         <DialogContent>
           {selectedOrder && (
@@ -1228,21 +1237,21 @@ const ClientDashboard = () => {
                 sx={{ mb: 2 }}
               >
                 {closeProjectAction === 'complete' 
-                  ? `Are you sure you want to mark "${selectedOrder.title}" as completed?`
+                  ? `Approve "${selectedOrder.title}" as completed and release payment to the provider?`
                   : `Are you sure you want to cancel "${selectedOrder.title}"? This action cannot be undone.`
                 }
               </Alert>
               
               <TextField
                 fullWidth
-                label={closeProjectAction === 'complete' ? 'Completion Notes (Optional)' : 'Cancellation Reason (Optional)'}
+                label={closeProjectAction === 'complete' ? 'Approval Notes (Optional)' : 'Cancellation Reason (Optional)'}
                 multiline
                 rows={3}
                 value={closeProjectReason}
                 onChange={(e) => setCloseProjectReason(e.target.value)}
                 placeholder={
                   closeProjectAction === 'complete' 
-                    ? 'Add any notes about the completed project...'
+                    ? 'Add any notes about the completed work before payment is released...'
                     : 'Please provide a reason for canceling this project...'
                 }
                 sx={{ mt: 2 }}
@@ -1264,7 +1273,7 @@ const ClientDashboard = () => {
             color={closeProjectAction === 'complete' ? 'success' : 'error'}
             onClick={confirmCloseProject}
           >
-            {closeProjectAction === 'complete' ? 'Mark as Completed' : 'Cancel Project'}
+            {closeProjectAction === 'complete' ? 'Approve & Release Payment' : 'Cancel Project'}
           </Button>
         </DialogActions>
       </Dialog>
