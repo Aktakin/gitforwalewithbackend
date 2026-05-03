@@ -165,7 +165,7 @@ const ClientDashboard = () => {
 
           if (paymentError) {
             console.warn('[ClientDashboard] Could not find escrow payment for proposal:', paymentError);
-          } else if (payment?.is_escrow && payment.status === 'held') {
+          } else if (payment && payment.status === 'held' && payment.is_escrow !== false) {
             console.log('[ClientDashboard] Releasing escrow funds for payment:', payment.id);
             await paymentService.releaseEscrow(payment.id, user.id);
             console.log('[ClientDashboard] Escrow funds released successfully to provider');
@@ -1041,7 +1041,10 @@ const ClientDashboard = () => {
                 </Typography>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography variant="h2" sx={{ fontWeight: 800, mb: 1, color: '#1E90FF' }}>
-                    {Math.round((orderStats.completedOrders / (orderStats.activeOrders + orderStats.completedOrders)) * 100)}%
+                    {(orderStats.activeOrders + orderStats.completedOrders) === 0
+                      ? 'N/A'
+                      : `${Math.round((orderStats.completedOrders / (orderStats.activeOrders + orderStats.completedOrders)) * 100)}%`
+                    }
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#666' }}>
                     Projects completed successfully

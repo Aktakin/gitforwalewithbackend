@@ -149,15 +149,18 @@ class PaymentService {
         paymentMethodId
       );
 
+      // Treat undefined is_escrow as true (escrow is the default/safe mode)
+      const isEscrow = payment.is_escrow !== false;
+
       // Update payment record - hold in escrow instead of succeeded
       const { data: updatedPayment, error: updateError } = await db.supabase
         .from('payments')
         .update({
-          status: payment.is_escrow ? 'held' : 'succeeded', // Hold in escrow if enabled
+          status: isEscrow ? 'held' : 'succeeded',
           paid_at: new Date().toISOString(),
           provider_transaction_id: result.charges?.data[0]?.id,
           provider_payment_method_id: paymentMethodId,
-          is_escrow: payment.is_escrow !== false, // Ensure escrow is set
+          is_escrow: isEscrow,
           metadata: {
             ...payment.metadata,
             receipt_url: result.charges?.data[0]?.receipt_url,
@@ -184,7 +187,7 @@ class PaymentService {
         });
 
       // If escrow enabled, hold funds
-      if (payment.is_escrow) {
+      if (isEscrow) {
         await this._holdInEscrow(paymentId, payment.amount);
       }
 
@@ -385,7 +388,7 @@ class PaymentService {
         throw new Error(`Payment is not held in escrow. Current status: ${payment.status}`);
       }
 
-      if (!payment.is_escrow) {
+      if (payment.is_escrow === false) {
         throw new Error('Payment is not held in escrow');
       }
 
@@ -401,7 +404,7 @@ class PaymentService {
       const providerStripeAccountId = payment.proposals?.users?.stripe_account_id;
 
       // If using Stripe, transfer funds to provider
-      if (this.provider === 'stripe' && payment.payment_intent_id) {
+      if (this.provider === 'stripe' && this._getPaymentIntentId(payment)) {
         try {
           // Transfer funds to provider via Stripe
           if (providerStripeAccountId) {
