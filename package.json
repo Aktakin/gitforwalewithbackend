@@ -63,6 +63,7 @@
   "devDependencies": {
     "http-proxy-middleware": "^2.0.9",
     "marked": "^15.0.7",
-    "serve": "^14.2.4"
+    "serve": "^14.2.4",
+    "supertest": "^7.2.2"
   }
 }
