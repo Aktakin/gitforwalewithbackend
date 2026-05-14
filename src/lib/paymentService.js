@@ -9,6 +9,32 @@ import { db } from './supabase';
 import mockPaymentService from './mockPaymentService';
 import stripeService from './stripeService';
 
+const PAYMENT_STATUS_LABELS = {
+  pending: 'Payment Pending',
+  processing: 'Processing Payment',
+  paid: 'Payment Received',
+  held: 'Funds in Escrow',
+  released: 'Funds Released',
+  succeeded: 'Payment Succeeded',
+  refunded: 'Refunded',
+  partially_refunded: 'Partially Refunded',
+  cancelled: 'Cancelled',
+  failed: 'Payment Failed',
+};
+
+const PAYMENT_STATUS_COLORS = {
+  pending: 'warning',
+  processing: 'info',
+  paid: 'info',
+  held: 'primary',
+  released: 'success',
+  succeeded: 'success',
+  refunded: 'default',
+  partially_refunded: 'default',
+  cancelled: 'error',
+  failed: 'error',
+};
+
 class PaymentService {
   constructor() {
     // Use Stripe if keys are configured, otherwise fall back to mock
@@ -29,7 +55,7 @@ class PaymentService {
   /**
    * Initialize payment for a proposal acceptance
    */
-  async createProposalPayment(proposalId, userId) {
+  async createProposalPayment(proposalId, userId, options = {}) {
     try {
       // Get proposal details
       const { data: proposal, error: proposalError } = await db.supabase
@@ -40,7 +66,22 @@ class PaymentService {
 
       if (proposalError) throw proposalError;
 
-      const amount = proposal.proposed_price || proposal.budget;
+      const approvedBudgetChange = proposal.metadata?.budget_change_request;
+      const approvedAmount = approvedBudgetChange?.status === 'approved'
+        ? Number(approvedBudgetChange.new_amount)
+        : null;
+      const amount = Number(
+        options.amountOverride ??
+        approvedAmount ??
+        proposal.proposed_price ??
+        proposal.proposedPrice ??
+        proposal.budget ??
+        proposal.requests?.budget
+      );
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('The proposal does not have a valid payable amount.');
+      }
 
       // Calculate fees
       const fees = this.paymentProvider.calculateFees(amount);
@@ -51,7 +92,7 @@ class PaymentService {
         currency: 'USD',
         metadata: {
           proposalId,
-          requestId: proposal.request_id,
+          requestId: proposal.request_id || options.requestId,
           userId,
           type: 'proposal_acceptance',
         },
@@ -59,34 +100,16 @@ class PaymentService {
 
       // Get provider user ID from proposal
       const providerUserId = proposal.user_id;
-
-      // Create payment record in database with escrow enabled
-      const { data: payment, error: paymentError } = await db.supabase
-        .from('payments')
-        .insert({
-          user_id: userId, // Payer (client)
-          request_id: proposal.request_id,
-          proposal_id: proposalId,
-          amount,
-          currency: 'USD',
-          status: 'pending',
-          payment_type: 'proposal_acceptance',
-          provider: this.provider,
-          payment_intent_id: paymentIntent.id,
-          transaction_id: paymentIntent.id,
-          platform_fee: fees.platformFee,
-          processing_fee: fees.processingFee,
-          net_amount: fees.netAmount,
-          is_escrow: true, // Enable escrow - funds held until completion
-          metadata: {
-            clientSecret: paymentIntent.clientSecret,
-            providerUserId: providerUserId, // Store provider ID for later transfer
-          },
-        })
-        .select()
-        .single();
-
-      if (paymentError) throw paymentError;
+      const payment = await this._createPaymentRecord({
+        proposalId,
+        requestId: proposal.request_id || options.requestId,
+        payerId: userId,
+        payeeId: providerUserId,
+        amount,
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.clientSecret,
+        fees,
+      });
 
       return {
         success: true,
@@ -122,19 +145,22 @@ class PaymentService {
 
       // Confirm payment with provider
       const result = await this.paymentProvider.confirmPayment(
-        payment.payment_intent_id,
+        this._getPaymentIntentId(payment),
         paymentMethodId
       );
+
+      // Treat undefined is_escrow as true (escrow is the default/safe mode)
+      const isEscrow = payment.is_escrow !== false;
 
       // Update payment record - hold in escrow instead of succeeded
       const { data: updatedPayment, error: updateError } = await db.supabase
         .from('payments')
         .update({
-          status: payment.is_escrow ? 'held' : 'succeeded', // Hold in escrow if enabled
+          status: isEscrow ? 'held' : 'succeeded',
           paid_at: new Date().toISOString(),
           provider_transaction_id: result.charges?.data[0]?.id,
           provider_payment_method_id: paymentMethodId,
-          is_escrow: payment.is_escrow !== false, // Ensure escrow is set
+          is_escrow: isEscrow,
           metadata: {
             ...payment.metadata,
             receipt_url: result.charges?.data[0]?.receipt_url,
@@ -151,7 +177,7 @@ class PaymentService {
         .from('transactions')
         .insert({
           payment_id: paymentId,
-          user_id: payment.user_id,
+          user_id: this._getPayerId(payment),
           type: 'payment',
           amount: payment.amount,
           currency: payment.currency,
@@ -161,7 +187,7 @@ class PaymentService {
         });
 
       // If escrow enabled, hold funds
-      if (payment.is_escrow) {
+      if (isEscrow) {
         await this._holdInEscrow(paymentId, payment.amount);
       }
 
@@ -171,11 +197,14 @@ class PaymentService {
         transactionId: result.charges?.data[0]?.id,
       };
     } catch (error) {
-      // Update payment status to failed
-      await db.supabase
-        .from('payments')
-        .update({ status: 'failed' })
-        .eq('id', paymentId);
+      try {
+        await db.supabase
+          .from('payments')
+          .update({ status: 'failed' })
+          .eq('id', paymentId);
+      } catch (updateError) {
+        console.warn('Could not persist failed payment state:', updateError);
+      }
 
       console.error('Error processing payment:', error);
       throw error;
@@ -190,12 +219,14 @@ class PaymentService {
       // Get payment to check if escrow is enabled
       const { data: paymentData } = await db.supabase
         .from('payments')
-        .select('is_escrow')
+        .select('*')
         .eq('id', paymentId)
         .single();
       
       // If payment succeeded and escrow is enabled, hold in escrow instead
-      const finalStatus = (status === 'succeeded' && paymentData?.is_escrow) ? 'held' : status;
+      const finalStatus = status === 'succeeded'
+        ? this._getSuccessfulStatus(paymentData)
+        : status;
       
       const updateData = {
         status: finalStatus,
@@ -203,13 +234,21 @@ class PaymentService {
       };
 
       if (paymentIntentId) {
-        updateData.payment_intent_id = paymentIntentId;
+        if ('payment_intent_id' in (paymentData || {})) {
+          updateData.payment_intent_id = paymentIntentId;
+        }
+        if ('stripe_payment_intent_id' in (paymentData || {})) {
+          updateData.stripe_payment_intent_id = paymentIntentId;
+        }
       }
       if (paymentMethodId) {
         updateData.provider_payment_method_id = paymentMethodId;
       }
       if (chargeId) {
         updateData.provider_transaction_id = chargeId;
+        if ('stripe_charge_id' in (paymentData || {})) {
+          updateData.stripe_charge_id = chargeId;
+        }
       }
 
       const { data: updatedPayment, error: updateError } = await db.supabase
@@ -225,7 +264,7 @@ class PaymentService {
       if (status === 'succeeded' || finalStatus === 'held') {
         const { data: payment } = await db.supabase
           .from('payments')
-          .select('user_id, amount, currency, payment_type')
+          .select('*')
           .eq('id', paymentId)
           .single();
 
@@ -234,15 +273,15 @@ class PaymentService {
             .from('transactions')
             .insert({
               payment_id: paymentId,
-              user_id: payment.user_id,
+              user_id: this._getPayerId(payment),
               type: 'payment',
               amount: payment.amount,
               currency: payment.currency,
-              status: finalStatus === 'held' ? 'held' : 'completed',
-              description: finalStatus === 'held' 
-                ? `Payment held in escrow for ${payment.payment_type}` 
-                : `Payment for ${payment.payment_type}`,
-              provider_transaction_id: chargeId,
+              status: 'completed',
+              description: finalStatus === 'held'
+                ? `Payment held in escrow for ${payment.payment_type || 'proposal acceptance'}`
+                : `Payment for ${payment.payment_type || 'proposal acceptance'}`,
+              provider_transaction_id: chargeId || payment.provider_transaction_id || payment.stripe_charge_id,
             });
         }
       }
@@ -272,12 +311,15 @@ class PaymentService {
       if (paymentError) throw paymentError;
 
       if (payment.status !== 'succeeded') {
+        if (payment.status === 'held') {
+          throw new Error('Escrow payments should be released instead of refunded directly.');
+        }
         throw new Error('Cannot refund a payment that has not succeeded');
       }
 
       // Create refund with provider
       const refund = await this.paymentProvider.createRefund({
-        paymentIntentId: payment.payment_intent_id,
+        paymentIntentId: this._getPaymentIntentId(payment),
         amount: Math.round((amount || payment.amount) * 100),
         reason,
       });
@@ -303,7 +345,7 @@ class PaymentService {
         .from('transactions')
         .insert({
           payment_id: paymentId,
-          user_id: payment.user_id,
+          user_id: this._getPayerId(payment),
           type: 'refund',
           amount: refundAmount,
           currency: payment.currency,
@@ -346,7 +388,7 @@ class PaymentService {
         throw new Error(`Payment is not held in escrow. Current status: ${payment.status}`);
       }
 
-      if (!payment.is_escrow) {
+      if (payment.is_escrow === false) {
         throw new Error('Payment is not held in escrow');
       }
 
@@ -362,7 +404,7 @@ class PaymentService {
       const providerStripeAccountId = payment.proposals?.users?.stripe_account_id;
 
       // If using Stripe, transfer funds to provider
-      if (this.provider === 'stripe' && payment.payment_intent_id) {
+      if (this.provider === 'stripe' && this._getPaymentIntentId(payment)) {
         try {
           // Transfer funds to provider via Stripe
           if (providerStripeAccountId) {
@@ -769,8 +811,90 @@ class PaymentService {
       currency,
     }).format(amount);
   }
+
+  _getPaymentIntentId(payment) {
+    return payment?.payment_intent_id || payment?.stripe_payment_intent_id || payment?.transaction_id;
+  }
+
+  _getPayerId(payment) {
+    return payment?.payer_id || payment?.user_id;
+  }
+
+  _getSuccessfulStatus(payment) {
+    if (payment?.is_escrow !== false) {
+      return 'held';
+    }
+    return payment?.payer_id || payment?.payee_id ? 'paid' : 'succeeded';
+  }
+
+  async _createPaymentRecord({
+    proposalId,
+    requestId,
+    payerId,
+    payeeId,
+    amount,
+    paymentIntentId,
+    clientSecret,
+    fees,
+  }) {
+    const metadata = {
+      clientSecret,
+      providerUserId: payeeId,
+    };
+
+    const attempts = [
+      {
+        proposal_id: proposalId,
+        request_id: requestId,
+        payer_id: payerId,
+        payee_id: payeeId,
+        amount,
+        currency: 'USD',
+        status: 'pending',
+        stripe_payment_intent_id: paymentIntentId,
+        metadata,
+      },
+      {
+        user_id: payerId,
+        request_id: requestId,
+        proposal_id: proposalId,
+        amount,
+        currency: 'USD',
+        status: 'pending',
+        payment_type: 'proposal_acceptance',
+        provider: this.provider,
+        payment_intent_id: paymentIntentId,
+        transaction_id: paymentIntentId,
+        platform_fee: fees.platformFee,
+        processing_fee: fees.processingFee,
+        net_amount: fees.netAmount,
+        is_escrow: true,
+        metadata,
+      },
+    ];
+
+    let lastError;
+    for (const payload of attempts) {
+      const { data, error } = await db.supabase
+        .from('payments')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (!error) {
+        return data;
+      }
+
+      lastError = error;
+    }
+
+    throw lastError || new Error('Unable to create payment record.');
+  }
 }
 
 // Export singleton instance
 export const paymentService = new PaymentService();
+export const formatAmount = (amount, currency = 'USD') => paymentService.formatCurrency(amount, currency);
+export const getStatusLabel = (status) => PAYMENT_STATUS_LABELS[status] || status;
+export const getStatusColor = (status) => PAYMENT_STATUS_COLORS[status] || 'default';
 export default paymentService;

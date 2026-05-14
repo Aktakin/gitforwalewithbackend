@@ -194,7 +194,7 @@ class StripePaymentService {
         },
         body: JSON.stringify({
           paymentIntentId,
-          amount: Math.round(amount * 100),
+          amount: Math.round(amount), // already in cents from paymentService
           reason,
         }),
       });
@@ -222,7 +222,7 @@ class StripePaymentService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Math.round(amount * 100),
+          amount: Math.round(amount), // already in cents from paymentService
           currency,
           destination,
           description,

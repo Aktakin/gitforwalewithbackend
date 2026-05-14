@@ -91,7 +91,7 @@ const PaymentModal = ({
     if (open && proposalId && user?.id && !paymentId && !clientSecret) {
       initializePayment();
     }
-  }, [open, proposalId, user?.id]);
+  }, [open, proposalId, user?.id, paymentId, clientSecret]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -112,7 +112,11 @@ const PaymentModal = ({
       setError(null);
       const result = await paymentService.createProposalPayment(
         proposalId,
-        user.id
+        user.id,
+        {
+          amountOverride: amount,
+          requestId,
+        }
       );
       setPaymentId(result.payment.id);
       setFees(result.fees);
@@ -182,7 +186,7 @@ const PaymentModal = ({
       elements,
       clientSecret,
       confirmParams: {
-        return_url: `${window.location.origin}/payment/success`,
+        return_url: `${window.location.origin}/payment/${paymentId}`,
       },
       redirect: 'if_required',
     });
@@ -408,7 +412,12 @@ const PaymentModal = ({
           <Button
             type="submit"
             variant="contained"
-            disabled={processing || !isStripeEnabled || !clientSecret || !nestedStripe || !nestedElements}
+            disabled={
+              processing ||
+              (isStripeEnabled
+                ? (!clientSecret || !nestedStripe || !nestedElements)
+                : !paymentId)
+            }
             startIcon={processing ? <CircularProgress size={20} /> : <Lock />}
             sx={{ minWidth: 120 }}
           >

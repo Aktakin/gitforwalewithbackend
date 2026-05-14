@@ -35,7 +35,7 @@ import ClientDashboard from './pages/client/ClientDashboard';
 import BrowseSkillsPage from './pages/browse/BrowseSkillsPage';
 import CreateProposalPage from './pages/proposals/CreateProposalPage';
 import ViewProposalsPage from './pages/proposals/ViewProposalsPage';
-// import PaymentPage from './pages/payment/PaymentPage'; // Temporarily disabled
+import PaymentPage from './pages/payment/PaymentPage';
 import SupportPage from './pages/support/SupportPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
@@ -248,8 +248,7 @@ function App() {
               } 
             />
 
-        {/* Payment - Temporarily Disabled */}
-        {/* <Route 
+        <Route
           path="/payment/:paymentId" 
           element={
             <ProtectedRoute>
@@ -258,7 +257,7 @@ function App() {
               </PageWrapper>
             </ProtectedRoute>
           } 
-        /> */}
+        />
             
             <Route 
               path="/search" 
