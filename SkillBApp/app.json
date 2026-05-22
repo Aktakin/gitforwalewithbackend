@@ -8,7 +8,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "primaryColor": "#1E90FF",
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/splash.png",
       "backgroundColor": "#1E90FF",
       "resizeMode": "contain"
     },
@@ -18,10 +20,17 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.skillbridge.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1E90FF"
       },
       "package": "com.skillbridge.app",
