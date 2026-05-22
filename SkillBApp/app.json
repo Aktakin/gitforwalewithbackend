@@ -36,11 +36,6 @@
       "package": "com.skillbridge.app",
       "versionCode": 1
     },
-    "platforms": ["ios", "android"],
-    "extra": {
-      "eas": {
-        "projectId": "REPLACE_AFTER_eas_init"
-      }
-    }
+    "platforms": ["ios", "android"]
   }
 }
