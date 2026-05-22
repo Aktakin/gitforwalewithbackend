@@ -36,6 +36,15 @@
       "package": "com.skillbridge.app",
       "versionCode": 1
     },
-    "platforms": ["ios", "android"]
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6a3ca40c-fd8a-4312-b797-deb93062829d"
+      }
+    },
+    "owner": "akinro"
   }
 }
